@@ -43,6 +43,12 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
+For a container or trusted remote development VM, bind the development server explicitly:
+
+```bash
+CLOUDSCOPE_DEV_HOST=0.0.0.0 pnpm dev
+```
+
 Open the address printed by the server. For a remote VM, forward its development port over SSH instead of exposing the development server publicly. In the portable workflow the default port is 5173:
 
 ```bash

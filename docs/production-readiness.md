@@ -2,7 +2,7 @@
 
 ## Browser capture observation — September 13, 2026
 
-The development preview reported a React hydration mismatch around the cost chart's SVG `title` content. React recovered on the client. README screenshots show the rendered interface after dismissing that development overlay. Chart point selection and Resources/Team limits navigation were exercised during capture; this is not a clean initial-load or production browser test. Investigate the server/client SVG rendering before release.
+The development preview initially reported a React hydration mismatch around the cost chart's SVG `title` content. The redundant title nodes were removed because the interactive chart targets already provide deterministic accessible labels. A clean refresh was checked after the fix. Chart point selection and Resources/Team limits navigation were also exercised; broader production browser coverage remains a release gate.
 
 ## Release decision
 

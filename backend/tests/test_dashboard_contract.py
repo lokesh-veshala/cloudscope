@@ -18,6 +18,10 @@ class DashboardContractTests(unittest.TestCase):
     def test_chart_pointer_keyboard_and_touch_handlers(self):
         for marker in ("onPointerEnter", "onPointerLeave", "onFocus", "onBlur", "onClick", 'role="tooltip"'):
             self.assertIn(marker, PAGE)
+        # SVG title nodes are omitted because the HTML parser can relocate their
+        # text during SSR hydration. Interactive hit targets already expose the
+        # same values through deterministic aria-label attributes.
+        self.assertNotIn("<title>", PAGE)
 
     def test_date_selection_does_not_prorate_unknown_costs(self):
         self.assertIn('Data unavailable for this range', PAGE)

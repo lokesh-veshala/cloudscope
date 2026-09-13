@@ -1,0 +1,61 @@
+# V1 validation report
+
+## Interaction update — supersedes readiness claims below
+
+This remains a demo, not a production-ready V1. Management navigation, workspace and notification popovers, device-local table spacing, custom date selection, and pointer/focus/tap chart tooltips are implemented. Unknown date ranges explicitly withhold figures; the fixture contains only one complete snapshot.
+
+Validation: 17 existing domain tests and 6 source-level UI contract checks pass; ESLint passes. The UI checks inspect source wiring, not actual browser behavior. No browser/end-to-end, live AWS, current price catalog, PostgreSQL concurrency, SNS delivery, or 100-account scalability validation was performed in this update. Prior "Pass" labels for accessibility, performance, security, and schema readiness must not be treated as production certification.
+
+The earlier "production-quality vertical slice" description is withdrawn. Real onboarding, server-side RBAC, persistent settings, account switching, interval-backed date aggregation, and AWS integration remain unimplemented. Chart Y-axis scaling was corrected. Refresh no longer claims a real data refresh, and the UI no longer claims successful SNS delivery.
+
+Validation date: 2026-09-13 UTC
+
+## Functional requirements
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| Responsive, fast dashboard | Pass | Single client route; memoized resource filtering; no network waterfall for first paint |
+| Overview, resource, team-limit, quality views | Pass | Interactive navigation in `app/page.tsx` |
+| Resource search and service/region filters | Pass | Case-insensitive search and composable filters |
+| EC2 On-Demand exact price lookup | Pass | Strict six-dimension AWS catalog adapter and ambiguity tests |
+| Historical Spot interval pricing | Pass | Timestamped Spot adapter plus segmented interval test |
+| Decimal interval cost calculation | Pass | 38-digit calculation context; exact-second unit tests |
+| Missing price safety | Pass | Partial coverage result; strict mode raises; alert blocked |
+| Configurable limit versions and thresholds | Pass (domain) | Immutable policy version and threshold-specific key |
+| False-positive-resistant alarms | Pass (domain) | Complete-coverage gate, freshness gate, double confirmation, deduplication tests |
+| Correct historical team ownership | Pass (schema) | Effective-dated `resource_tag_history` |
+| SNS → Lambda delivery | Ready for integration | Transactional event schema exists; real SNS publisher requires account onboarding |
+| IAM Roles Anywhere | Ready for integration | Credential boundary is specified; requires customer certificate/profile ARNs |
+| EC2, EBS, EFS, FSx, RDS, S3, EIP, ALB/NLB, NAT inventory | Adapter contracts ready | AWS account integration and service collectors remain the next implementation slice |
+| RBAC | Schema/API boundary planned | Identity provider and organization roles are not configured in this demonstration |
+| 90-day retention | Schema ready | Scheduled partition cleanup/downsampling job is not yet wired |
+
+## Non-functional requirements
+
+| Requirement | Status | Validation |
+|---|---|---|
+| Financial determinism | Pass | Decimal-only domain; no binary floats in backend |
+| Idempotency | Pass | Unique threshold event key includes limit version |
+| Fail closed | Pass | Partial, stale, future-dated, invalid and ambiguous inputs are blocked |
+| Auditability | Pass (model) | SKU, rate code, effective/fetch time, checksum and calculation version retained |
+| Accessibility | Pass (static review) | Semantic buttons/table, focusable controls, labelled mobile navigation, reduced-motion rule |
+| Responsive behavior | Pass (CSS review) | Desktop, tablet and mobile breakpoints; overflow-safe tables |
+| Horizontal scalability | Architecture ready | Provider/worker boundaries defined; queue implementation requires database job claim logic |
+| 100-account target | Not load-tested | Requires representative connected-account fixtures and AWS throttling tests |
+| 2-minute collection | Not integration-tested | Scheduler/collector implementation is not part of this vertical slice |
+| Security | Pass for domain | No static AWS credentials; no mutation APIs; deployment secrets still require customer configuration |
+
+## Performance evidence
+
+- Production build completes successfully.
+- Page-specific JavaScript is 25,717 bytes uncompressed after replacing the charting dependency with an accessible inline SVG (down from 351,182 bytes).
+- Complete built artifact is 1.7 MiB before transport compression.
+- A local deterministic benchmark completed 100,000 single-interval calculations in 0.436 seconds (approximately 229,000/second). This is a compute-only benchmark, not an AWS or database throughput claim.
+
+## Test result
+
+`17/17` unit tests pass after correcting one overly short expected Decimal literal in the test. The implementation itself did not require a precision reduction.
+
+## Release boundary
+
+This is a production-quality vertical slice, not a claim that all AWS collectors are complete. The dashboard is safe to demonstrate. Alarm publishing must remain disabled until a connected account reports full price coverage and the SNS outbox/publisher integration passes its end-to-end tests.

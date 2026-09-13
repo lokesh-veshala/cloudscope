@@ -1,5 +1,11 @@
 # Customer evaluation and onboarding
 
+## Generate the AWS onboarding stack
+
+Open **Cloud accounts**, enter the test account ID, deployment region, collector certificate CN, and the PEM contents of the verified public CA certificate. CloudScope downloads a complete CloudFormation template containing an account/region guard, a CA trust anchor, a certificate-CN-bound collector role, a Roles Anywhere profile, and a dedicated SNS topic. Private keys never belong in the form or template.
+
+Deploy the template in the selected test account with IAM resource acknowledgement and retain its outputs. Template generation configures the AWS side only; importing the outputs and running the signing helper remain separate connection steps.
+
 ## Availability
 
 CloudScope currently provides a demonstration dashboard. It cannot onboard a live AWS account, calculate your AWS spend, save shared team limits or send customer notifications.

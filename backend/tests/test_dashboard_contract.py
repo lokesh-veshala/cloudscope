@@ -4,6 +4,7 @@ import unittest
 
 PAGE = (Path(__file__).resolve().parents[2] / "app/page.tsx").read_text()
 MANAGEMENT = (Path(__file__).resolve().parents[2] / "app/management.tsx").read_text()
+ONBOARDING = (Path(__file__).resolve().parents[2] / "app/aws-onboarding.ts").read_text()
 
 class DashboardContractTests(unittest.TestCase):
     def test_management_views_are_wired(self):
@@ -38,3 +39,12 @@ class DashboardContractTests(unittest.TestCase):
     def test_preferences_are_explicitly_device_local(self):
         self.assertIn("Device-local preferences only", MANAGEMENT)
         self.assertIn('localStorage.setItem("cloudscope-density"', MANAGEMENT)
+
+    def test_account_onboarding_generates_restricted_cloudformation(self):
+        self.assertIn("Download CloudFormation template", MANAGEMENT)
+        for marker in ("AWS::RolesAnywhere::TrustAnchor", "AWS::RolesAnywhere::Profile", "AWS::IAM::Role", "AWS::SNS::Topic"):
+            self.assertIn(marker, ONBOARDING)
+        self.assertIn("aws:PrincipalTag/x509Subject/CN", ONBOARDING)
+        self.assertIn("Resource: !Ref AlertTopic", ONBOARDING)
+        for forbidden in ("PRIVATE KEY-----", "ec2:StopInstances", "ec2:TerminateInstances", "lambda:InvokeFunction"):
+            self.assertNotIn(forbidden, ONBOARDING)

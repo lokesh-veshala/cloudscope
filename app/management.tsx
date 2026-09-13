@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { buildAwsOnboardingTemplate, validateAwsOnboarding } from "./aws-onboarding";
+import { LiveInventory } from "./live-inventory";
 
 type Account = { id:string; provider_account_id:string; display_name:string; region:string; credential_profile:string; connection_status:"UNTESTED"|"CONNECTED"|"FAILED"; last_error?:string };
 function apiUrl(path:string) {
@@ -11,10 +12,15 @@ function apiUrl(path:string) {
   return `http://127.0.0.1:8000${path}`;
 }
 
-async function request<T>(path:string,options?:RequestInit):Promise<T>{
+export async function request<T>(path:string,options?:RequestInit):Promise<T>{
   const response=await fetch(apiUrl(path),{...options,headers:{"Content-Type":"application/json",...options?.headers}});
   const body=await response.json().catch(()=>({}));
-  if(!response.ok) throw new Error(body.detail||`Request failed (${response.status})`);
+  if(!response.ok) {
+    const detail = Array.isArray(body.detail)
+      ? body.detail.map((item: {loc?: string[]; msg?: string}) => `${item.loc?.slice(1).join('.') || 'Request'}: ${item.msg || 'Invalid value'}`).join('; ')
+      : typeof body.detail === 'string' ? body.detail : `Request failed (${response.status})`;
+    throw new Error(detail);
+  }
   return body;
 }
 
@@ -35,6 +41,7 @@ export function Accounts() {
   const action=async(account:Account,name:"test-connection"|"collect")=>{setBusy(`${account.id}:${name}`);setMessage("");try{const result=await request(`/api/v1/accounts/${account.id}/${name}`,{method:"POST"});setDetails(current=>({...current,[account.id]:result}));setMessage(name==="collect"?"Collection finished. Review its verified and unresolved results.":"Connection test finished.");await loadAccounts();}catch(error){setDetails(current=>({...current,[account.id]:(error as Error).message}));}finally{setBusy("");}};
 
   return <div className="management-stack">
+    <LiveInventory accounts={accounts}/>
     <article className="panel management"><h2>Connected AWS accounts</h2><p>Account metadata and inventory remain in this installation&apos;s PostgreSQL database.</p>
       {accounts.length===0&&<p>No account is registered with the live backend.</p>}
       {accounts.map(account=><section className="account-row" key={account.id}><div><b>{account.display_name}</b><span>{account.provider_account_id} · {account.region}</span><small>Profile: {account.credential_profile}</small></div><span className={`pill ${account.connection_status==="CONNECTED"?"success":account.connection_status==="FAILED"?"danger":"warning"}`}>{account.connection_status}</span><button disabled={Boolean(busy)} onClick={()=>void action(account,"test-connection")}>{busy===`${account.id}:test-connection`?"Testing…":"Test connection"}</button><button disabled={Boolean(busy)||account.connection_status!=="CONNECTED"} onClick={()=>void action(account,"collect")}>{busy===`${account.id}:collect`?"Collecting…":"Collect now"}</button>{details[account.id]!==undefined&&<pre>{typeof details[account.id]==="string"?String(details[account.id]):JSON.stringify(details[account.id],null,2)}</pre>}</section>)}

@@ -33,7 +33,11 @@ def session_for(config: AwsAccountConfig):
 
 
 def validate_connection(config: AwsAccountConfig) -> dict[str, Any]:
-    session = session_for(config)
+    try:
+        session = session_for(config)
+    except Exception:
+        return {"connected": False, "checks": [{"name": "profile", "status": "FAIL",
+            "error": "AWS profile could not be loaded. Check the profile name, mounted configuration, and collector UID permissions."}]}
     checks: list[dict[str, Any]] = []
 
     def check(name: str, action: Callable[[], Any]) -> Any:
@@ -60,6 +64,8 @@ def validate_connection(config: AwsAccountConfig) -> dict[str, Any]:
                 f"received {identity.get('Account')}"
             ),
         }
+    if not identity or identity.get("Account") != config.account_id:
+        return {"connected": False, "checks": checks}
     check(
         "ec2_inventory",
         lambda: session.client("ec2", config=AWS_CONFIG).describe_instances(
@@ -69,7 +75,7 @@ def validate_connection(config: AwsAccountConfig) -> dict[str, Any]:
     check(
         "cloudwatch",
         lambda: session.client("cloudwatch", config=AWS_CONFIG).list_metrics(
-            MaxResults=1
+            Namespace="AWS/EC2"
         ),
     )
     check(
@@ -97,13 +103,17 @@ def collect_resources(
     config: AwsAccountConfig,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     session = session_for(config)
+    identity = session.client("sts", config=AWS_CONFIG).get_caller_identity()
+    if identity.get("Account") != config.account_id:
+        raise ValueError("Collector identity does not match the registered account")
     now = datetime.now(timezone.utc)
     resources: list[dict[str, Any]] = []
     failures: list[dict[str, str]] = []
 
     def guarded(service: str, action: Callable[[], Iterable[dict[str, Any]]]):
         try:
-            resources.extend(action())
+            batch = list(action())
+            resources.extend(batch)
         except Exception as exc:
             failures.append({"service": service, "error": _safe_error(exc)})
 

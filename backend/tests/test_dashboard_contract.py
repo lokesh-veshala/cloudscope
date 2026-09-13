@@ -36,6 +36,11 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn("No live AWS request was made", PAGE)
         self.assertIn("No real alerts have been sent", MANAGEMENT)
 
+    def test_live_account_actions_are_wired(self):
+        for marker in ('"/api/v1/accounts"', '"test-connection"', '"collect"', "Register account locally"):
+            self.assertIn(marker, MANAGEMENT)
+        self.assertIn("Private keys stay on this VM", MANAGEMENT)
+
     def test_preferences_are_explicitly_device_local(self):
         self.assertIn("Device-local preferences only", MANAGEMENT)
         self.assertIn('localStorage.setItem("cloudscope-density"', MANAGEMENT)

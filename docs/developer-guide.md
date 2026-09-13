@@ -54,7 +54,9 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend python3 -m unittest discover -s bac
 
 This suite uses the standard library and injected fake clients; it does not need boto3, FastAPI, Docker or AWS credentials.
 
-Expected baseline: 23 passing checks, consisting of 17 domain tests and six source-level dashboard checks. A source assertion can confirm that a handler exists; it cannot prove that a popover opens, focus moves correctly or a tooltip renders.
+Expected baseline: 29 passing checks, including cost/alarm domain tests, AWS
+normalization and safety tests, and source-level dashboard contracts. A source
+assertion cannot prove browser behavior or live AWS/PostgreSQL integration.
 
 ### Exercise the calculator
 

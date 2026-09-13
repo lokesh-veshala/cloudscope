@@ -1,12 +1,33 @@
 # V1 validation report
 
+## Live account integration update
+
+The first test-account integration includes local PostgreSQL account
+registration, IAM Roles Anywhere profile execution, identity/account validation,
+V1 inventory collectors, resource state/tag history, and strict Linux/shared EC2
+On-Demand catalog matching. Partial service failures are reported explicitly.
+
+Alarm evaluation and SNS publication remain disabled because complete usage and
+price intervals are not implemented. Linux/shared Spot instances may display an
+explicit 42%-discount fallback against exact On-Demand pricing, but that value is
+classified as estimated and is never alarm-eligible. Windows and non-default
+tenancy remain unresolved.
+
+Validation performed locally: 29 Python tests passed, ESLint passed, and the
+Vinext production build passed. PostgreSQL/AWS end-to-end validation must run on
+the test VM because this build environment has neither Docker nor runtime AWS
+credentials.
+
 ## Interaction update — supersedes readiness claims below
 
 This remains a demo, not a production-ready V1. Management navigation, workspace and notification popovers, device-local table spacing, custom date selection, and pointer/focus/tap chart tooltips are implemented. Unknown date ranges explicitly withhold figures; the fixture contains only one complete snapshot.
 
 Validation: 17 existing domain tests and 6 source-level UI contract checks pass; ESLint passes. The UI checks inspect source wiring, not actual browser behavior. No browser/end-to-end, live AWS, current price catalog, PostgreSQL concurrency, SNS delivery, or 100-account scalability validation was performed in this update. Prior "Pass" labels for accessibility, performance, security, and schema readiness must not be treated as production certification.
 
-The earlier "production-quality vertical slice" description is withdrawn. Real onboarding, server-side RBAC, persistent settings, account switching, interval-backed date aggregation, and AWS integration remain unimplemented. Chart Y-axis scaling was corrected. Refresh no longer claims a real data refresh, and the UI no longer claims successful SNS delivery.
+The earlier "production-quality vertical slice" description is withdrawn.
+Test-account onboarding and inventory collection now exist, but server-side RBAC,
+account switching, interval-backed date aggregation, and alert delivery remain
+unimplemented. The overview remains a demo snapshot.
 
 Validation date: 2026-09-13 UTC
 

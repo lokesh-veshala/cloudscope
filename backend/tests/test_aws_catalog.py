@@ -37,6 +37,7 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(filters["instanceType"], "c6g.2xlarge")
         self.assertEqual(filters["regionCode"], "us-east-1")
         self.assertEqual(filters["capacitystatus"], "Used")
+        self.assertEqual(filters["marketoption"], "OnDemand")
         self.assertEqual(str(price.usd_per_unit), "0.272")
 
     def test_ambiguous_matches_fail_closed(self):

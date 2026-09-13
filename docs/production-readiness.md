@@ -90,6 +90,10 @@ Rollback must account for both application and schema versions. Backups require 
 
 ## Evidence available now
 
-The baseline suite has 23 passing checks: 17 domain tests and six source-contract UI checks. Prior frontend builds and lint passed. No live AWS, clean-machine installation, schema migration/restore, concurrency, SNS end-to-end or browser acceptance evidence is included.
+The baseline suite has 29 passing checks. Frontend build and lint pass. The user
+has independently verified Roles Anywhere and required read APIs from the test
+VM, but the new API/database integration still requires VM end-to-end validation.
+No schema restore, concurrency, SNS end-to-end, or authenticated browser
+acceptance evidence is included.
 
 The earlier validation report is historical. Its broad “Pass” labels and “production-quality” wording were withdrawn. This document and the architecture's implementation boundaries govern release discussions.

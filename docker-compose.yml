@@ -1,13 +1,38 @@
 services:
   api:
     build: ./backend
+    user: "${CLOUDSCOPE_UID:?Set CLOUDSCOPE_UID}:${CLOUDSCOPE_GID:?Set CLOUDSCOPE_GID}"
     environment:
       DATABASE_URL: postgresql+psycopg://cloudscope:cloudscope@postgres:5432/cloudscope
-    ports: ["8000:8000"]
+      AWS_CONFIG_FILE: /aws/config
+      AWS_SDK_LOAD_CONFIG: "1"
+      CLOUDSCOPE_ALLOWED_ORIGINS: ${CLOUDSCOPE_ALLOWED_ORIGINS:-http://127.0.0.1:5173}
+    ports: ["${CLOUDSCOPE_BIND_IP:-127.0.0.1}:8000:8000"]
+    volumes:
+      - ${CLOUDSCOPE_AWS_CONFIG_FILE:?Set CLOUDSCOPE_AWS_CONFIG_FILE}:/aws/config:ro,z
+      - ${CLOUDSCOPE_SIGNING_HELPER:?Set CLOUDSCOPE_SIGNING_HELPER}:/cloudscope/aws_signing_helper:ro,z
+      - ${CLOUDSCOPE_COLLECTOR_CERT:?Set CLOUDSCOPE_COLLECTOR_CERT}:/pki/collector.crt:ro,z
+      - ${CLOUDSCOPE_COLLECTOR_KEY:?Set CLOUDSCOPE_COLLECTOR_KEY}:/pki/collector.key:ro,z
     depends_on:
       postgres: { condition: service_healthy }
     read_only: true
     tmpfs: ["/tmp"]
+    restart: unless-stopped
+  web:
+    image: node:24-bookworm
+    working_dir: /app
+    environment:
+      npm_config_cache: /tmp/npm-cache
+      CLOUDSCOPE_DEV_HOST: 0.0.0.0
+    command: >-
+      sh -c 'npx --yes pnpm@11.25.0 install --frozen-lockfile &&
+      exec npx --yes pnpm@11.25.0 run dev'
+    ports: ["${CLOUDSCOPE_BIND_IP:-127.0.0.1}:5173:5173"]
+    volumes:
+      - .:/app:z
+      - cloudscope-node-modules:/app/node_modules
+    depends_on:
+      api: { condition: service_healthy }
     restart: unless-stopped
   postgres:
     image: postgres:17.6-alpine
@@ -24,3 +49,4 @@ services:
     restart: unless-stopped
 volumes:
   cloudscope-db:
+  cloudscope-node-modules:

@@ -42,6 +42,7 @@ class Ec2OnDemandCatalog:
             self._term("tenancy", "Shared"),
             self._term("preInstalledSw", "NA"),
             self._term("capacitystatus", "Used"),
+            self._term("marketoption", "OnDemand"),
         ]
         documents: list[dict[str, Any]] = []
         token: str | None = None

@@ -12,6 +12,8 @@
 
 # testing
 /coverage
+__pycache__/
+*.py[cod]
 
 # next.js
 /.next/
@@ -21,6 +23,21 @@
 # misc
 .DS_Store
 *.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.csr
+*.srl
+aws_signing_helper
+/runtime/
+/secrets/
+/pki/
+/.aws/
+*database*.dump
+*.sql.gz
+*.log
 
 # debug
 npm-debug.log*
@@ -30,6 +47,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel

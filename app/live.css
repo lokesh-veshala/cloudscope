@@ -1,0 +1,7 @@
+.management-stack { display: grid; gap: 18px; }
+.account-row { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto auto; gap: 12px; align-items: center; padding: 16px 0; border-top: 1px solid var(--line); }
+.account-row > div { display: grid; gap: 3px; }
+.account-row span, .account-row small { display: block; }
+.account-row pre { grid-column: 1 / -1; max-height: 260px; overflow: auto; padding: 14px; border-radius: 8px; background: #101b31; color: #dce7ff; font-size: 12px; white-space: pre-wrap; }
+.account-row button:disabled { cursor: not-allowed; opacity: .5; }
+@media (max-width: 800px) { .account-row { grid-template-columns: 1fr 1fr; } .account-row > div { grid-column: 1 / -1; } }

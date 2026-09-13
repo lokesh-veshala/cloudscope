@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./live.css";
 
 export const metadata: Metadata = {
   title: "CloudScope — Cloud Cost Governance",

@@ -59,7 +59,9 @@ Then open `http://localhost:5173` on your computer. Explore **Overview**, select
 
 The [hosted sample](https://cloud-governance-control.karankiran422.chatgpt.site) is access-restricted; repository visitors can use these screenshots or run the frontend locally.
 
-**Testing against AWS is not available yet.** Cloning and starting this frontend does not discover your resources. Collectors, temporary-credential onboarding, pricing ingestion, persistence and frontend/API integration still need implementation. Do not enter AWS keys into the demo or treat its values as account spend. See the [release gates](docs/production-readiness.md).
+The complete Compose stack can collect inventory from one authorized test
+account. The overview, cost, and limit views still show demo data; do not treat
+their values as account spend. See the [release gates](docs/production-readiness.md).
 
 ## Documentation
 
@@ -70,15 +72,36 @@ The [hosted sample](https://cloud-governance-control.karankiran422.chatgpt.site)
 | [Customer guide](docs/customer-guide.md) | Evaluators and account owners | Dashboard walkthrough, limitations, pilot prerequisites |
 | [Production readiness](docs/production-readiness.md) | Maintainers and operators | Known defects, acceptance gates, deployment and incident requirements |
 
+### Live AWS test stack
+
+The Cloud Accounts screen can register a deployed CloudFormation stack, validate
+the mounted IAM Roles Anywhere profile, and collect inventory into local
+PostgreSQL. Account inventory and credentials are runtime data and are never
+written to this repository.
+
+Copy `.env.example` to `.env`, set absolute VM paths for the AWS config, signing
+helper, collector certificate, and collector private key, then set the bind IP
+and allowed browser origin. Start with `docker compose up -d --build`. Register
+the stack outputs in Cloud Accounts, run **Test connection**, and only then run
+**Collect now**.
+
+This slice does not publish SNS alerts or display calculated AWS spend. It stores
+resource state/tag history and validates exact Linux/shared EC2 On-Demand rates.
+Before historical Spot coverage exists, Linux/shared Spot instances use a clearly
+marked 42% discount assumption against the exact On-Demand rate. This fallback
+is excluded from alarm evaluation. Other incomplete dimensions remain unresolved.
+
 ## What is implemented
 
 - React/TypeScript dashboard with sample resource filters, date controls, chart tooltips, and management views.
 - Python interval calculator using Decimal arithmetic.
+- Live account registration, Roles Anywhere connection checks, and V1 AWS inventory collectors.
 - EC2 Linux/shared On-Demand catalog adapter and Spot history adapter, exercised with fixtures.
 - In-memory threshold evaluator.
-- Draft PostgreSQL schema and a two-service Compose definition.
+- PostgreSQL state/tag history persistence and a local three-service Compose stack.
 
-The target system adds native AWS inventory collectors, usage ingestion, historical pricing persistence, server-side authorization, durable scheduling and SNS delivery. Those components are not present merely because their tables or interface names exist.
+The target system still requires usage ingestion, historical pricing persistence,
+server-side authorization, durable scheduling, cost aggregation, and SNS delivery.
 
 ## Quick verification
 
@@ -88,9 +111,12 @@ From the repository root, using Python 3.13:
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend python3 -m unittest discover -s backend/tests -v
 ```
 
-The current suite contains 17 domain tests and six source-level UI checks. No AWS account is required. The UI checks are not browser tests.
+The current suite contains 29 tests. No AWS account is required. Source-level UI
+checks are not browser tests.
 
-See the [developer guide](docs/developer-guide.md) for frontend and API setup. The existing Compose file is for isolated local development only; it includes example credentials and exposes an unauthenticated API.
+See the [developer guide](docs/developer-guide.md) for frontend and API setup.
+The Compose stack is for a controlled test network; the API does not yet provide
+user authentication and must not be exposed to the public internet.
 
 ## Repository provenance
 

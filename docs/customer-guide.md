@@ -1,5 +1,34 @@
 # Customer evaluation and onboarding
 
+## Connect the first test account
+
+1. Generate and deploy the CloudFormation template from **Cloud accounts**.
+2. Configure an AWS CLI profile on the collector host whose
+   `credential_process` uses the Roles Anywhere signing helper and collector
+   certificate. Keep the private key readable only by the collector operator.
+3. Copy `.env.example` to `.env` and replace every path with an absolute path on
+   the collector VM. For private-IP testing, set `CLOUDSCOPE_BIND_IP` to that IP
+   and `CLOUDSCOPE_ALLOWED_ORIGINS` to the exact `http://IP:5173` browser origin.
+   Set `CLOUDSCOPE_UID` and `CLOUDSCOPE_GID` to the output of `id -u` and `id -g`;
+   this lets the API read the operator-owned `0600` collector key without making
+   the key broadly readable.
+4. Run `docker compose up -d --build`, then verify `/healthz` on port 8000.
+5. Enter the CloudFormation outputs and mounted profile name under **Register
+   deployed stack outputs**, then select **Register account locally**.
+6. Select **Test connection**. Collection stays disabled unless identity,
+   inventory, CloudWatch, tagging, and strict catalog lookup checks pass.
+7. Select **Collect now** and inspect resource counts, service failures, and EC2
+   pricing coverage.
+
+No certificate, private key, AWS profile, inventory, or account-specific output
+belongs in Git. Collection is read-only. SNS publication and limit evaluation
+remain disabled until complete usage and pricing intervals are implemented.
+
+If historical Spot coverage is unavailable, CloudScope records a provisional
+Spot estimate equal to 58% of the exact matching On-Demand rate (a 42% assumed
+discount). It is labeled as an assumption and cannot be used for threshold
+alerts. It is not evidence of the Spot price charged by AWS.
+
 ## Generate the AWS onboarding stack
 
 Open **Cloud accounts**, enter the test account ID, deployment region, collector certificate CN, and the PEM contents of the verified public CA certificate. CloudScope downloads a complete CloudFormation template containing an account/region guard, a CA trust anchor, a certificate-CN-bound collector role, a Roles Anywhere profile, and a dedicated SNS topic. Private keys never belong in the form or template.
@@ -8,7 +37,9 @@ Deploy the template in the selected test account with IAM resource acknowledgeme
 
 ## Availability
 
-CloudScope currently provides a demonstration dashboard. It cannot onboard a live AWS account, calculate your AWS spend, save shared team limits or send customer notifications.
+CloudScope currently combines a demonstration dashboard with a test-account
+collector. It can register the deployed stack and collect inventory, but it
+cannot yet calculate AWS spend, save shared team limits, or send notifications.
 
 The demo can be used to review the interface and agree on requirements. Do not enter AWS access keys, private keys, customer billing data or production credentials.
 
@@ -20,7 +51,9 @@ The demo can be used to review the interface and agree on requirements. Do not e
 4. Hover over a chart point, focus it using the keyboard, or tap it to display its sample cost.
 5. Open Date Range. The complete sample snapshot covers September 1–13, 2026. Other ranges return “Data unavailable”; they do not estimate missing usage. The date range accepts 1–90 days.
 6. Open Team Limits to review illustrative threshold scenarios. There is no editable or enforced customer policy yet.
-7. Open Cloud Accounts for onboarding prerequisites. The Shared Engineering menu identifies the demo workspace; it cannot switch real AWS accounts.
+7. Open Cloud Accounts to register and test one non-production AWS account. The
+   Shared Engineering menu still identifies the demo workspace and does not yet
+   switch the main dashboard to live data.
 8. Open Notifications or Alert History. No real SNS delivery or Lambda execution has occurred.
 9. In Settings, select table spacing and save it on this device. Loading the saved preference applies it again. This is not a shared organization setting.
 10. Refresh reloads the demo indication; it does not contact AWS.
@@ -37,7 +70,9 @@ Stopped compute can leave chargeable storage or other attached resources. The pr
 
 ## Preparing a future pilot
 
-Do not deploy IAM changes based on this guide alone. A reviewed onboarding template and working collector are prerequisites and are not included yet.
+Use the generated IAM stack only in the authorized test account until its
+permissions and collected results have been reviewed. Production onboarding is
+not approved by this guide.
 
 | Customer input | Why it is needed | Handling |
 | --- | --- | --- |
@@ -52,7 +87,7 @@ Do not deploy IAM changes based on this guide alone. A reviewed onboarding templ
 
 The intended alert period is a calendar month with explicit timezone handling. UTC is the proposed V1 baseline; a different business timezone requires engineering support and boundary tests.
 
-## Pilot acceptance sequence — not available today
+## Production acceptance sequence — not available today
 
 1. Engineering provides a tested release, reviewed permissions and rollback instructions.
 2. Customer authorizes one non-production account and a small region set.
@@ -74,4 +109,7 @@ For a cost discrepancy, specify whether the comparison is to a test fixture, pub
 
 ## What happens next
 
-The next engineering milestones are durable backend storage, account onboarding and collection, authenticated API integration, and validated notification delivery. A working button or a green unit-test suite is not evidence that these milestones are complete.
+The next engineering milestones are complete usage/cost intervals, authenticated
+API integration, dashboard queries, scheduling, and validated notification
+delivery. A working button or green unit-test suite is not evidence that these
+milestones are complete.

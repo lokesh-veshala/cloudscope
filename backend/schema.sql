@@ -1,19 +1,33 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-CREATE TABLE cloud_accounts (
+CREATE TABLE IF NOT EXISTS cloud_accounts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   provider text NOT NULL CHECK (provider IN ('aws','azure','gcp')),
   provider_account_id text NOT NULL,
   display_name text NOT NULL,
+  region text NOT NULL DEFAULT 'us-east-1',
+  credential_profile text NOT NULL DEFAULT 'cloudscope-test',
   role_arn text,
   roles_anywhere_profile_arn text,
+  trust_anchor_arn text,
   sns_topic_arn text,
+  connection_status text NOT NULL DEFAULT 'UNTESTED' CHECK (connection_status IN ('UNTESTED','CONNECTED','FAILED')),
+  connection_checked_at timestamptz,
+  last_collected_at timestamptz,
+  last_error text,
   enabled boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(provider, provider_account_id)
 );
+ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS region text NOT NULL DEFAULT 'us-east-1';
+ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS credential_profile text NOT NULL DEFAULT 'cloudscope-test';
+ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS trust_anchor_arn text;
+ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS connection_status text NOT NULL DEFAULT 'UNTESTED';
+ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS connection_checked_at timestamptz;
+ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS last_collected_at timestamptz;
+ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS last_error text;
 
-CREATE TABLE resources (
+CREATE TABLE IF NOT EXISTS resources (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   cloud_account_id uuid NOT NULL REFERENCES cloud_accounts(id),
   provider text NOT NULL,
@@ -31,10 +45,10 @@ CREATE TABLE resources (
   metadata jsonb NOT NULL DEFAULT '{}',
   UNIQUE(cloud_account_id, provider_resource_type, provider_resource_id)
 );
-CREATE INDEX resources_query_idx ON resources(cloud_account_id, region, resource_type, state);
-CREATE INDEX resources_metadata_gin ON resources USING gin(metadata);
+CREATE INDEX IF NOT EXISTS resources_query_idx ON resources(cloud_account_id, region, resource_type, state);
+CREATE INDEX IF NOT EXISTS resources_metadata_gin ON resources USING gin(metadata);
 
-CREATE TABLE resource_state_history (
+CREATE TABLE IF NOT EXISTS resource_state_history (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   resource_id uuid NOT NULL REFERENCES resources(id),
   state text NOT NULL,
@@ -42,9 +56,9 @@ CREATE TABLE resource_state_history (
   valid_to timestamptz,
   CHECK (valid_to IS NULL OR valid_to > valid_from)
 );
-CREATE UNIQUE INDEX one_open_resource_state ON resource_state_history(resource_id) WHERE valid_to IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS one_open_resource_state ON resource_state_history(resource_id) WHERE valid_to IS NULL;
 
-CREATE TABLE resource_tag_history (
+CREATE TABLE IF NOT EXISTS resource_tag_history (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   resource_id uuid NOT NULL REFERENCES resources(id),
   tag_key text NOT NULL,
@@ -53,10 +67,10 @@ CREATE TABLE resource_tag_history (
   valid_to timestamptz,
   CHECK (valid_to IS NULL OR valid_to > valid_from)
 );
-CREATE INDEX tag_history_assignment_idx ON resource_tag_history(tag_key, tag_value, valid_from, valid_to);
-CREATE UNIQUE INDEX one_open_tag_value ON resource_tag_history(resource_id, tag_key) WHERE valid_to IS NULL;
+CREATE INDEX IF NOT EXISTS tag_history_assignment_idx ON resource_tag_history(tag_key, tag_value, valid_from, valid_to);
+CREATE UNIQUE INDEX IF NOT EXISTS one_open_tag_value ON resource_tag_history(resource_id, tag_key) WHERE valid_to IS NULL;
 
-CREATE TABLE pricing_catalog (
+CREATE TABLE IF NOT EXISTS pricing_catalog (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   provider text NOT NULL,
   service text NOT NULL,
@@ -73,10 +87,10 @@ CREATE TABLE pricing_catalog (
   source_checksum text NOT NULL,
   UNIQUE(provider, rate_code, effective_from)
 );
-CREATE INDEX pricing_lookup_idx ON pricing_catalog(provider, service, region, effective_from, effective_to);
-CREATE INDEX pricing_dimensions_gin ON pricing_catalog USING gin(lookup_dimensions);
+CREATE INDEX IF NOT EXISTS pricing_lookup_idx ON pricing_catalog(provider, service, region, effective_from, effective_to);
+CREATE INDEX IF NOT EXISTS pricing_dimensions_gin ON pricing_catalog USING gin(lookup_dimensions);
 
-CREATE TABLE cost_intervals (
+CREATE TABLE IF NOT EXISTS cost_intervals (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   resource_id uuid NOT NULL REFERENCES resources(id),
   usage_start timestamptz NOT NULL,
@@ -91,9 +105,9 @@ CREATE TABLE cost_intervals (
   CHECK (covered_seconds >= 0 AND covered_seconds <= requested_seconds),
   UNIQUE(resource_id, usage_start, usage_end, calculation_version)
 );
-CREATE INDEX cost_range_idx ON cost_intervals(resource_id, usage_start, usage_end);
+CREATE INDEX IF NOT EXISTS cost_range_idx ON cost_intervals(resource_id, usage_start, usage_end);
 
-CREATE TABLE dashboards (
+CREATE TABLE IF NOT EXISTS dashboards (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   cloud_account_id uuid NOT NULL REFERENCES cloud_accounts(id),
   name text NOT NULL,
@@ -102,7 +116,7 @@ CREATE TABLE dashboards (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE dashboard_limits (
+CREATE TABLE IF NOT EXISTS dashboard_limits (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   dashboard_id uuid NOT NULL REFERENCES dashboards(id),
   configuration_version integer NOT NULL,
@@ -118,7 +132,7 @@ CREATE TABLE dashboard_limits (
   UNIQUE(dashboard_id, configuration_version)
 );
 
-CREATE TABLE threshold_events (
+CREATE TABLE IF NOT EXISTS threshold_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   dashboard_id uuid NOT NULL REFERENCES dashboards(id),
   limit_id uuid NOT NULL REFERENCES dashboard_limits(id),
@@ -135,7 +149,7 @@ CREATE TABLE threshold_events (
   UNIQUE(dashboard_id, period_start, limit_version, threshold_percent)
 );
 
-CREATE TABLE collection_jobs (
+CREATE TABLE IF NOT EXISTS collection_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   cloud_account_id uuid NOT NULL REFERENCES cloud_accounts(id),
   collector text NOT NULL,
@@ -146,5 +160,4 @@ CREATE TABLE collection_jobs (
   error_code text,
   details jsonb NOT NULL DEFAULT '{}'
 );
-CREATE INDEX collection_queue_idx ON collection_jobs(status, scheduled_for);
-
+CREATE INDEX IF NOT EXISTS collection_queue_idx ON collection_jobs(status, scheduled_for);

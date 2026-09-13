@@ -1,0 +1,94 @@
+import unittest
+from datetime import datetime, timezone
+from decimal import Decimal
+from unittest.mock import patch
+
+from providers.aws.collector import (
+    AwsAccountConfig,
+    _ebs_volumes,
+    _ec2_instances,
+    price_running_ec2,
+    validate_connection,
+)
+
+
+class Paginator:
+    def __init__(self, pages): self.pages = pages
+    def paginate(self, **_): return self.pages
+
+
+class Client:
+    def __init__(self, pages): self.pages = pages
+    def get_paginator(self, _): return Paginator(self.pages)
+
+
+class IdentityClient:
+    def __init__(self, account): self.account = account
+    def get_caller_identity(self): return {"Account": self.account}
+
+
+class GenericClient:
+    def describe_instances(self, **_): return {}
+    def list_metrics(self, **_): return {}
+    def get_resources(self, **_): return {}
+
+
+class Session:
+    def __init__(self, account): self.account = account
+    def client(self, name, **_):
+        if name == "sts": return IdentityClient(self.account)
+        return GenericClient()
+
+
+class CollectorTests(unittest.TestCase):
+    def test_ec2_normalizes_purchase_model_os_and_tags(self):
+        now = datetime.now(timezone.utc)
+        pages = [{"Reservations":[{"Instances":[{
+            "InstanceId":"i-example", "InstanceType":"c7i.large",
+            "InstanceLifecycle":"spot", "State":{"Name":"running"},
+            "Placement":{"AvailabilityZone":"us-east-1a"},
+            "Tags":[{"Key":"Name","Value":"worker"},{"Key":"Team","Value":"HPC"}],
+        }]}]}]
+        row = list(_ec2_instances(Client(pages), "us-east-1", now))[0]
+        self.assertEqual(row["name"], "worker")
+        self.assertEqual(row["metadata"]["purchase_model"], "SPOT")
+        self.assertEqual(row["metadata"]["os"], "Linux")
+        self.assertEqual(row["metadata"]["tags"]["Team"], "HPC")
+
+    def test_ebs_keeps_billable_dimensions(self):
+        now = datetime.now(timezone.utc)
+        pages = [{"Volumes":[{"VolumeId":"vol-example","State":"in-use",
+            "AvailabilityZone":"us-east-1a","VolumeType":"gp3","Size":100,
+            "Iops":6000,"Throughput":250}]}]
+        row = list(_ebs_volumes(Client(pages), "us-east-1", now))[0]
+        self.assertEqual(row["metadata"], {"volume_type":"gp3","size_gib":100,"iops":6000,"throughput":250,"tags":{}})
+
+    @patch("providers.aws.collector.Ec2OnDemandCatalog.fetch_linux_shared")
+    @patch("providers.aws.collector.session_for")
+    def test_account_mismatch_fails_connection(self, session_for, price):
+        session_for.return_value = Session("999999999999")
+        price.return_value = object()
+        result = validate_connection(AwsAccountConfig("123456789012", "us-east-1", "test"))
+        self.assertFalse(result["connected"])
+        self.assertIn("expected account", result["checks"][0]["error"])
+
+    @patch("providers.aws.collector.Ec2OnDemandCatalog.fetch_linux_shared")
+    @patch("providers.aws.collector.session_for")
+    def test_spot_fallback_is_discounted_and_alarm_ineligible(self, session_for, fetch):
+        session_for.return_value = Session("123456789012")
+        fetch.return_value = type("Price", (), {
+            "usd_per_unit": Decimal("0.10"),
+            "sku":"sku", "rate_code":"rate",
+            "effective_at":datetime.now(timezone.utc),
+            "fetched_at":datetime.now(timezone.utc),
+        })()
+        rows = [{"provider_resource_type":"ec2","provider_resource_id":"i-spot",
+                 "state":"running","metadata":{"purchase_model":"SPOT","os":"Linux","tenancy":"default","instance_type":"t3.micro"}}]
+        result = price_running_ec2(AwsAccountConfig("123456789012","us-east-1","test"), rows)
+        self.assertEqual(result["i-spot"]["status"], "ESTIMATED")
+        self.assertEqual(result["i-spot"]["usd_per_hour"], "0.0580")
+        self.assertEqual(result["i-spot"]["assumed_discount_percent"], "42")
+        self.assertFalse(result["i-spot"]["alert_eligible"])
+
+
+if __name__ == "__main__": unittest.main()

@@ -106,7 +106,7 @@ No accounts, resources, costs, limits or SNS API routes are implemented. Request
 
 ## 5. Isolated Compose development
 
-The current Compose file contains an API container and PostgreSQL only. It includes example credentials, maps API port 8000 on all host interfaces, and does not configure TLS or authentication. Run it only on an isolated development machine with appropriate inbound restrictions.
+The Compose file runs the API, PostgreSQL and a frontend development server. It includes example database credentials, publishes API port 8001 and web port 5173 on the configured bind address (loopback by default), and does not configure TLS or authentication. Run it only on an isolated development machine with appropriate inbound restrictions. See [live integration status](live-integration-status.md) for update instructions and calculation exclusions.
 
 ```bash
 docker compose config --quiet

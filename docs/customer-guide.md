@@ -12,7 +12,7 @@
    Set `CLOUDSCOPE_UID` and `CLOUDSCOPE_GID` to the output of `id -u` and `id -g`;
    this lets the API read the operator-owned `0600` collector key without making
    the key broadly readable.
-4. Run `docker compose up -d --build`, then verify `/healthz` on port 8000.
+4. Run `docker compose up -d --build`, then verify `/healthz` on port 8001.
 5. Enter the CloudFormation outputs and mounted profile name under **Register
    deployed stack outputs**, then select **Register account locally**.
 6. Select **Test connection**. Collection stays disabled unless identity,

@@ -20,15 +20,15 @@ const trend = [
 ];
 
 const resources: Resource[] = [
-  {id:"i-0c91a2f34e67d89ab",name:"hpc-worker-01",service:"EC2",region:"us-east-1",state:"Running",model:"Spot",cost:1184.21,confidence:100,team:"HPC"},
-  {id:"fs-0a132ef980c7b21d4",name:"scratch-lustre",service:"FSx",region:"us-east-1",state:"Available",model:"—",cost:741.42,confidence:100,team:"HPC"},
-  {id:"i-0f62d77ab12c45e98",name:"hpc-headnode",service:"EC2",region:"us-east-1",state:"Running",model:"On-Demand",cost:693.18,confidence:100,team:"HPC"},
-  {id:"vol-06b0fabe6712d890c",name:"training-data",service:"EBS",region:"us-east-1",state:"In-use",model:"gp3",cost:481.08,confidence:100,team:"ML Platform"},
-  {id:"db-XJ2Q9T4B8R",name:"qa-postgres",service:"RDS",region:"us-east-2",state:"Available",model:"db.r6g.xlarge",cost:367.93,confidence:100,team:"QA"},
-  {id:"nat-07e8b84c93a24c03d",name:"shared-egress",service:"NAT",region:"us-east-1",state:"Available",model:"—",cost:288.51,confidence:99,team:"DevOps"},
-  {id:"fs-08a3e77ce2081b9d2",name:"team-shared",service:"EFS",region:"us-east-1",state:"Available",model:"Elastic",cost:190.38,confidence:100,team:"HPC"},
-  {id:"prod-artifacts-us",name:"prod-artifacts",service:"S3",region:"us-east-1",state:"Active",model:"Standard",cost:112.64,confidence:87,team:"DevOps"},
-  {id:"app/prod-api/50dc6c495c0c9188",name:"prod-api",service:"ELB",region:"us-east-1",state:"Active",model:"ALB",cost:77.65,confidence:98,team:"QA"},
+  {id:"DEMO-RESOURCE-1",name:"demo-resource-1",service:"EC2",region:"us-east-1",state:"Running",model:"Spot",cost:1184.21,confidence:100,team:"HPC"},
+  {id:"DEMO-RESOURCE-2",name:"demo-resource-2",service:"FSx",region:"us-east-1",state:"Available",model:"—",cost:741.42,confidence:100,team:"HPC"},
+  {id:"DEMO-RESOURCE-3",name:"demo-resource-3",service:"EC2",region:"us-east-1",state:"Running",model:"On-Demand",cost:693.18,confidence:100,team:"HPC"},
+  {id:"DEMO-RESOURCE-4",name:"demo-resource-4",service:"EBS",region:"us-east-1",state:"In-use",model:"gp3",cost:481.08,confidence:100,team:"ML Platform"},
+  {id:"DEMO-RESOURCE-5",name:"demo-resource-5",service:"RDS",region:"us-east-2",state:"Available",model:"db.r6g.xlarge",cost:367.93,confidence:100,team:"QA"},
+  {id:"DEMO-RESOURCE-6",name:"demo-resource-6",service:"NAT",region:"us-east-1",state:"Available",model:"—",cost:288.51,confidence:99,team:"DevOps"},
+  {id:"DEMO-RESOURCE-7",name:"demo-resource-7",service:"EFS",region:"us-east-1",state:"Available",model:"Elastic",cost:190.38,confidence:100,team:"HPC"},
+  {id:"DEMO-RESOURCE-8",name:"demo-resource-8",service:"S3",region:"us-east-1",state:"Active",model:"Standard",cost:112.64,confidence:87,team:"DevOps"},
+  {id:"DEMO-RESOURCE-9",name:"demo-resource-9",service:"ELB",region:"us-east-1",state:"Active",model:"ALB",cost:77.65,confidence:98,team:"QA"},
 ];
 
 const services = [
@@ -67,7 +67,7 @@ function CostTrend() {
 }
 
 export default function Home() {
-  const [view,setView]=useState("overview");
+  const [view,setView]=useState("live");
   const [range,setRange]=useState("2026-09-01/2026-09-13");
   const [from,setFrom]=useState("2026-09-01"); const [to,setTo]=useState("2026-09-13");
   const [dateError,setDateError]=useState("");
@@ -76,6 +76,13 @@ export default function Home() {
   const [mobile,setMobile]=useState(false); const [notice,setNotice]=useState("");
   const filtered=useMemo(()=>resources.filter(r=>(service==="All services"||r.service===service)&&(region==="All regions"||r.region===region)&&(`${r.name} ${r.id} ${r.team}`).toLowerCase().includes(query.toLowerCase())),[query,service,region]);
   const refresh=()=>{setNotice("Demo snapshot reloaded. No live AWS request was made."); setTimeout(()=>setNotice(""),3200)};
+
+  if(view === "live") return <main className="content">
+    <div className="panel management"><h1>CloudScope — live read-only pilot</h1>
+      <p>Account inventory, observed cost subtotals and local team limits. Complete costs and notifications are not enabled.</p>
+      <button onClick={()=>setView("overview")}>View sample dashboard</button>
+    </div><Accounts/>
+  </main>;
 
   return <div className="shell">
     <aside className={`sidebar ${mobile?"open":""}`}>

@@ -41,10 +41,33 @@ class Session:
 
 
 class CollectorTests(unittest.TestCase):
+    @patch("providers.aws.collector.session_for", side_effect=RuntimeError("private detail"))
+    def test_profile_load_failure_is_reported_without_secret_detail(self, session):
+        result = validate_connection(AwsAccountConfig("123456789012", "us-east-1", "missing"))
+        self.assertFalse(result["connected"])
+        self.assertEqual(result["checks"][0]["name"], "profile")
+        self.assertNotIn("private detail", str(result))
+
+    @patch("providers.aws.collector.Ec2OnDemandCatalog.fetch_linux_shared")
+    @patch("providers.aws.collector.session_for")
+    def test_cloudwatch_arguments_match_installed_sdk(self, session_for, price):
+        import botocore.session
+        from botocore.validate import validate_parameters
+        shape = botocore.session.get_session().get_service_model("cloudwatch").operation_model("ListMetrics").input_shape
+        client = GenericClient()
+        client.list_metrics = lambda **kwargs: validate_parameters(kwargs, shape)
+        session = Session("123456789012")
+        original = session.client
+        session.client = lambda name, **kwargs: client if name == "cloudwatch" else original(name, **kwargs)
+        session_for.return_value = session
+        result = validate_connection(AwsAccountConfig("123456789012", "us-east-1", "test"))
+        self.assertTrue(result["connected"])
+
     def test_ec2_normalizes_purchase_model_os_and_tags(self):
         now = datetime.now(timezone.utc)
         pages = [{"Reservations":[{"Instances":[{
             "InstanceId":"i-example", "InstanceType":"c7i.large",
+            "PlatformDetails":"Linux/UNIX",
             "InstanceLifecycle":"spot", "State":{"Name":"running"},
             "Placement":{"AvailabilityZone":"us-east-1a"},
             "Tags":[{"Key":"Name","Value":"worker"},{"Key":"Team","Value":"HPC"}],

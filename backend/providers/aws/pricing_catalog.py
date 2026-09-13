@@ -61,6 +61,8 @@ class Ec2OnDemandCatalog:
             if not token:
                 break
         candidates = self._hourly_candidates(documents)
+        if any(not candidate.usd_per_unit.is_finite() or candidate.usd_per_unit <= 0 for candidate in candidates):
+            raise CatalogMatchError("invalid or zero EC2 hourly rate")
         if len(candidates) != 1:
             raise CatalogMatchError(
                 f"expected exactly one USD hourly price for {instance_type} in "

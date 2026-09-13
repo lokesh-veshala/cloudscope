@@ -16,6 +16,7 @@ def initialize_database() -> None:
     schema = Path(__file__).with_name("schema.sql").read_text()
     statements = [part.strip() for part in schema.split(";") if part.strip()]
     with engine.begin() as connection:
+        connection.execute(text("SELECT pg_advisory_xact_lock(1435780241)"))
         for statement in statements:
             connection.exec_driver_sql(statement)
 

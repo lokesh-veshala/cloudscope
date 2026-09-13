@@ -161,3 +161,26 @@ CREATE TABLE IF NOT EXISTS collection_jobs (
   details jsonb NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS collection_queue_idx ON collection_jobs(status, scheduled_for);
+
+CREATE TABLE IF NOT EXISTS observed_costs (
+  resource_id uuid NOT NULL REFERENCES resources(id),
+  usage_start timestamptz NOT NULL,
+  usage_end timestamptz NOT NULL,
+  amount_usd numeric(38,18),
+  basis text NOT NULL,
+  reason text NOT NULL,
+  tags jsonb NOT NULL,
+  PRIMARY KEY(resource_id, usage_start, usage_end),
+  CHECK (usage_end > usage_start),
+  CHECK (amount_usd IS NULL OR amount_usd >= 0)
+);
+CREATE INDEX IF NOT EXISTS observed_cost_range ON observed_costs(usage_start, usage_end);
+CREATE TABLE IF NOT EXISTS pilot_team_limits (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  cloud_account_id uuid NOT NULL REFERENCES cloud_accounts(id),
+  name text NOT NULL,
+  tag_key text NOT NULL,
+  tag_value text NOT NULL,
+  amount_usd numeric(20,6) NOT NULL CHECK(amount_usd > 0),
+  created_at timestamptz NOT NULL DEFAULT now()
+);

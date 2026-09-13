@@ -6,6 +6,8 @@ import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from uuid import UUID
+from decimal import Decimal
+from observed_costs import estimate_observed_interval
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -182,7 +184,13 @@ def collect_account(account_id: UUID):
         1 for item in prices.values() if item["status"] == "ESTIMATED"
     )
     with engine.begin() as connection:
+        connection.execute(text("SELECT id FROM cloud_accounts WHERE id=:id FOR UPDATE"), {"id": account_id})
         for item in discovered:
+            previous = connection.execute(text("""SELECT id, last_seen, state, metadata FROM resources
+                WHERE cloud_account_id=:account AND provider_resource_type=:service AND provider_resource_id=:resource
+                FOR UPDATE"""), {"account": account_id, "service": item["provider_resource_type"], "resource": item["provider_resource_id"]}).mappings().first()
+            if previous and previous["last_seen"] >= item["observed_at"]:
+                continue
             metadata = {
                 **item["metadata"],
                 "pricing": prices.get(
@@ -224,6 +232,14 @@ def collect_account(account_id: UUID):
                     "metadata": json.dumps(metadata),
                 },
             ).scalar_one()
+            if previous:
+                estimate = estimate_observed_interval(previous, item, metadata["pricing"])
+                connection.execute(text("""INSERT INTO observed_costs
+                    (resource_id,usage_start,usage_end,amount_usd,basis,reason,tags)
+                    VALUES (:id,:start,:end,:amount,:basis,:reason,CAST(:tags AS jsonb))
+                    ON CONFLICT DO NOTHING"""), {"id": resource_id, "start": previous["last_seen"],
+                    "end": item["observed_at"], "amount": estimate["amount"], "basis": estimate["basis"],
+                    "reason": estimate["reason"], "tags": json.dumps(previous["metadata"].get("tags", {}))})
             _sync_state(connection, resource_id, item["state"], item["observed_at"])
             _sync_tags(
                 connection,
@@ -340,3 +356,54 @@ def quality():
         ],
         "reason": "alerting remains disabled until complete cost intervals exist",
     }
+
+
+class PilotLimitCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    tag_key: str = Field(min_length=1, max_length=128)
+    tag_value: str = Field(min_length=1, max_length=256)
+    amount_usd: Decimal = Field(gt=0, max_digits=20, decimal_places=6, allow_inf_nan=False)
+
+
+@app.post("/api/v1/accounts/{account_id}/limits", status_code=201)
+def create_pilot_limit(account_id: UUID, payload: PilotLimitCreate):
+    _account(account_id)
+    with engine.begin() as connection:
+        result = connection.execute(text("""INSERT INTO pilot_team_limits
+            (cloud_account_id,name,tag_key,tag_value,amount_usd)
+            VALUES (:account,:name,:tag_key,:tag_value,:amount) RETURNING id"""),
+            {"account": account_id, "name": payload.name, "tag_key": payload.tag_key,
+             "tag_value": payload.tag_value, "amount": payload.amount_usd}).scalar_one()
+    return {"id": result, "notification_enabled": False}
+
+
+@app.get("/api/v1/accounts/{account_id}/overview")
+def live_overview(account_id: UUID):
+    account = _account(account_id)
+    now = datetime.now(timezone.utc)
+    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    # Clip intervals crossing the UTC month boundary; decimal math stays in PostgreSQL.
+    subtotal = "SUM(c.amount_usd * EXTRACT(EPOCH FROM (LEAST(c.usage_end,:end)-GREATEST(c.usage_start,:start))) / EXTRACT(EPOCH FROM (c.usage_end-c.usage_start)))"
+    scope = "FROM observed_costs c JOIN resources r ON r.id=c.resource_id WHERE r.cloud_account_id=:id AND c.usage_end>:start AND c.usage_start<:end"
+    args = {"id": account_id, "start": start, "end": now}
+    with engine.connect() as connection:
+        services = rows(connection.execute(text("""SELECT provider_resource_type AS service, count(*) AS resources,
+            min(first_seen) AS first_observed, max(last_seen) AS last_observed
+            FROM resources WHERE cloud_account_id=:id GROUP BY provider_resource_type ORDER BY provider_resource_type"""), {"id": account_id}))
+        costs = rows(connection.execute(text(f"SELECT c.basis, count(*) AS intervals, {subtotal} AS amount_usd {scope} GROUP BY c.basis"), args))
+        limits = rows(connection.execute(text("SELECT * FROM pilot_team_limits WHERE cloud_account_id=:id ORDER BY created_at"), {"id": account_id}))
+        for limit in limits:
+            amount = connection.execute(text(f"SELECT {subtotal} {scope} AND (c.tags ->> :key) = :value"),
+                {**args, "key": limit["tag_key"], "value": limit["tag_value"]}).scalar_one()
+            limit["observed_subtotal_usd"] = str(amount) if amount is not None else None
+            limit["amount_usd"] = str(limit["amount_usd"])
+            limit["evaluation_status"] = "WITHHELD_INCOMPLETE_COST_COVERAGE"
+    for cost in costs:
+        cost["amount_usd"] = str(cost["amount_usd"]) if cost["amount_usd"] is not None else None
+    return {"account_name": account["display_name"], "period_start": start, "period_end": now,
+            "last_collected_at": account["last_collected_at"], "last_error": account["last_error"],
+            "services": services, "observed_costs": costs, "limits": limits,
+            "complete_account_cost_usd": None, "alerts_evaluated": False,
+            "limitations": ["Only supported EC2 compute intervals are priced", "Continuous running between polls is assumed",
+                "No usage before the first observation is reconstructed", "Stopped storage and other services are not included",
+                "Spot fallback assumes a 42% discount", "Limit alarms are withheld for incomplete costs"]}

@@ -47,7 +47,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="CloudScope API", version="1.8.0", lifespan=lifespan)
+app = FastAPI(title="CloudScope API", version="1.9.0", lifespan=lifespan)
 allowed_origins = [
     origin.strip()
     for origin in os.environ.get(
@@ -266,7 +266,7 @@ def alert_history():
         return rows(connection.execute(text("""SELECT e.id,e.event_type,e.status,
             e.threshold_percent,e.estimated_cost_usd,e.limit_usd,e.usage_percent,
             e.baseline_amount_usd,e.observed_cost_usd,e.monitoring_started_at,
-            e.period_basis,
+            e.period_basis,e.calculation_coverage,
             e.sns_message_id,e.error_message,e.created_at,e.published_at,
             t.name AS team_name,a.display_name AS account_name
           FROM pilot_threshold_events e
@@ -509,6 +509,7 @@ class PilotLimitCreate(BaseModel):
     baseline_amount_usd: Decimal = Field(default=Decimal("0"), ge=0,
                                          max_digits=20, decimal_places=6,
                                          allow_inf_nan=False)
+    allow_partial_alerts: bool = False
     filter_expression: dict
 
     @field_validator("name")
@@ -678,6 +679,14 @@ def _team_alert_snapshot(connection, account_id, team, period_start,
         reason = "cost_history_incomplete_after_monitoring_start"
     elif snapshot["last_interval"] is None or data_as_of - snapshot["last_interval"] > timedelta(minutes=10):
         reason = "cost_data_is_stale"
+    snapshot["calculation_coverage"] = "COMPLETE"
+    if team["allow_partial_alerts"] and reason:
+        observed = (Decimal(snapshot["observed_cost_usd"])
+                    if snapshot["observed_cost_usd"] is not None else Decimal("0"))
+        snapshot["observed_cost_usd"] = observed
+        snapshot["cost_usd"] = baseline + observed
+        snapshot["calculation_coverage"] = "PARTIAL_OBSERVED"
+        reason = None
     return snapshot, reason
 
 
@@ -741,17 +750,18 @@ def _evaluate_and_deliver_alerts(account_id: UUID, account) -> dict:
                     connection.execute(text("""INSERT INTO pilot_threshold_events
                         (cloud_account_id,team_id,configuration_version,period_start,
                          period_end,threshold_percent,estimated_cost_usd,limit_usd,
-                         usage_percent,pricing_coverage,baseline_amount_usd,
-                         observed_cost_usd,monitoring_started_at,period_basis,
-                         status,topic_arn)
+                         usage_percent,pricing_coverage,calculation_coverage,
+                         baseline_amount_usd,observed_cost_usd,monitoring_started_at,
+                         period_basis,status,topic_arn)
                         VALUES (:account,:team,:version,:start,:end,:threshold,
-                          :cost,:limit,:usage,1,:baseline,:observed,:monitoring,
-                          :basis,'PENDING',:topic)
+                          :cost,:limit,:usage,1,:coverage,:baseline,:observed,
+                          :monitoring,:basis,'PENDING',:topic)
                         ON CONFLICT DO NOTHING"""), {"account": account_id,
                         "team": team["id"], "version": team["configuration_version"],
                         "start": period_start, "end": period_end,
                         "threshold": threshold, "cost": cost,
                         "limit": team["amount_usd"], "usage": usage,
+                        "coverage": snapshot["calculation_coverage"],
                         "baseline": snapshot["baseline_amount_usd"],
                         "observed": snapshot["observed_cost_usd"],
                         "monitoring": snapshot["monitoring_started_at"],
@@ -765,7 +775,7 @@ def _evaluate_and_deliver_alerts(account_id: UUID, account) -> dict:
                                   "decision": decision, "reason": reason})
     deliveries = _deliver_pending_alerts(account_id, account)
     return {"active": True, "evaluations": decisions, "deliveries": deliveries,
-            "safety_policy": "declared_baseline_plus_complete_observations_since_monitoring_start"}
+            "safety_policy": "per_team_complete_or_partial_observed_mode"}
 
 
 def _deliver_pending_alerts(account_id: UUID, account) -> list[dict]:
@@ -795,10 +805,7 @@ def _deliver_pending_alerts(account_id: UUID, account) -> list[dict]:
                 "USER_DECLARED"
                 if event["period_basis"] == "DECLARED_BASELINE_PLUS_MONITORING"
                 else "NOT_APPLICABLE"),
-            "calculation_coverage": (
-                "DECLARED_BASELINE_PLUS_VERIFIED_OBSERVATIONS"
-                if event["period_basis"] == "DECLARED_BASELINE_PLUS_MONITORING"
-                else "VERIFIED_CALENDAR_MONTH_OBSERVATIONS"),
+            "calculation_coverage": event["calculation_coverage"],
             "is_test": False,
             "automatic_threshold_alert": True,
             "triggered_at": event["created_at"].isoformat()}
@@ -864,12 +871,14 @@ def create_pilot_limit(account_id: UUID, payload: PilotLimitCreate):
     with engine.begin() as connection:
         result = connection.execute(text("""INSERT INTO pilot_team_limits
             (cloud_account_id,name,tag_key,tag_value,amount_usd,
-             baseline_amount_usd,filter_expression)
-            VALUES (:account,:name,'','',:amount,:baseline,CAST(:filter AS jsonb))
+             baseline_amount_usd,allow_partial_alerts,filter_expression)
+            VALUES (:account,:name,'','',:amount,:baseline,:allow_partial,
+                   CAST(:filter AS jsonb))
             RETURNING id"""),
             {"account": account_id, "name": payload.name,
              "amount": payload.amount_usd,
              "baseline": payload.baseline_amount_usd,
+             "allow_partial": payload.allow_partial_alerts,
              "filter": json.dumps(payload.filter_expression)}).scalar_one()
     return {"id": result, "notification_enabled": _valid_account_topic(account),
             "automatic_alerts_enabled": True,

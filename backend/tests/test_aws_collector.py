@@ -108,6 +108,7 @@ class CollectorTests(unittest.TestCase):
         row = list(_fsx(Client(pages), "us-east-1", now))[0]
         self.assertEqual(row["metadata"]["deployment_type"], "PERSISTENT_2")
         self.assertEqual(row["metadata"]["per_unit_storage_throughput"], 250)
+        self.assertIsNone(row["metadata"]["drive_cache_type"])
 
     @patch("providers.aws.collector.Ec2OnDemandCatalog.fetch_linux_shared")
     @patch("providers.aws.collector.session_for")

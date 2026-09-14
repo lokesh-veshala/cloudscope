@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Accounts, AlertHistory, Settings } from "./management";
+import { LiveDashboard } from "./live-dashboard";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import {
   Activity, AlertTriangle, Bell, Boxes, CheckCircle2, ChevronDown,
@@ -77,19 +78,14 @@ export default function Home() {
   const filtered=useMemo(()=>resources.filter(r=>(service==="All services"||r.service===service)&&(region==="All regions"||r.region===region)&&(`${r.name} ${r.id} ${r.team}`).toLowerCase().includes(query.toLowerCase())),[query,service,region]);
   const refresh=()=>{setNotice("Demo snapshot reloaded. No live AWS request was made."); setTimeout(()=>setNotice(""),3200)};
 
-  if(view === "live") return <main className="content">
-    <div className="panel management"><h1>CloudScope — live read-only pilot</h1>
-      <p>Account inventory, observed cost subtotals and local team limits. Complete costs and notifications are not enabled.</p>
-      <button onClick={()=>setView("overview")}>View sample dashboard</button>
-    </div><Accounts/>
-  </main>;
+  if(view === "live") return <LiveDashboard onSample={()=>setView("overview")}/>;
 
   return <div className="shell">
     <aside className={`sidebar ${mobile?"open":""}`}>
       <div className="brand"><span className="logo"><Cloud size={19}/></span><span>Cloud<span>Scope</span></span><button className="close" onClick={()=>setMobile(false)} aria-label="Close navigation"><X/></button></div>
       <nav>{nav.map(n=><button key={n.id} className={view===n.id?"active":""} onClick={()=>{setView(n.id);setMobile(false)}}><n.icon size={18}/>{n.label}{n.id==="quality"&&<span className="nav-count">2</span>}</button>)}</nav>
       <div className="side-caption">MANAGE</div>
-      <nav>{[["accounts","Cloud accounts"],["alerts","Alert history"],["settings","Settings"]].map(([id,label])=><button key={id} className={view===id?"active":""} onClick={()=>{setView(id);setMobile(false)}}>{id==="accounts"?<Database size={18}/>:id==="alerts"?<Bell size={18}/>:<SlidersHorizontal size={18}/>} {label}</button>)}</nav>
+      <nav><button onClick={()=>{setView("live");setMobile(false)}}><Activity size={18}/>Live dashboard</button>{[["accounts","Cloud accounts"],["alerts","Alert history"],["settings","Settings"]].map(([id,label])=><button key={id} className={view===id?"active":""} onClick={()=>{setView(id);setMobile(false)}}>{id==="accounts"?<Database size={18}/>:id==="alerts"?<Bell size={18}/>:<SlidersHorizontal size={18}/>} {label}</button>)}</nav>
       <div className="sidebar-foot"><div className="health"><span><i/>Demo • collectors not connected</span><small>No live collection</small></div><div className="profile"><span>LK</span><div><b>Lokesh Kumar</b><small>Platform admin</small></div><MoreHorizontal size={18}/></div></div>
     </aside>
     {mobile&&<button className="backdrop" onClick={()=>setMobile(false)} aria-label="Close navigation"/>}

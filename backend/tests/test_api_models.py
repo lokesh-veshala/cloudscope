@@ -1,8 +1,10 @@
 import unittest
+from datetime import date, datetime, timezone
 
 from pydantic import ValidationError
+from fastapi import HTTPException
 
-from api import CollectionScheduleUpdate, _storage_pricing_summary
+from api import CollectionScheduleUpdate, _reporting_window, _storage_pricing_summary
 
 
 class ApiModelTests(unittest.TestCase):
@@ -23,6 +25,19 @@ class ApiModelTests(unittest.TestCase):
         self.assertEqual(summary["ebs"]["complete"], 1)
         self.assertEqual(summary["efs"]["unresolved_reasons"], {"no rate": 1})
         self.assertNotIn("filesystem", str(summary))
+
+    def test_reporting_window_is_inclusive_and_capped_at_now(self):
+        now = datetime(2026, 9, 14, 12, tzinfo=timezone.utc)
+        start, end = _reporting_window(date(2026, 9, 1), date(2026, 9, 14), now)
+        self.assertEqual(start, datetime(2026, 9, 1, tzinfo=timezone.utc))
+        self.assertEqual(end, now)
+
+    def test_reporting_window_rejects_unordered_or_long_ranges(self):
+        now = datetime(2026, 9, 14, 12, tzinfo=timezone.utc)
+        for start, end in ((date(2026, 9, 2), date(2026, 9, 1)),
+                           (date(2026, 1, 1), date(2026, 9, 1))):
+            with self.assertRaises(HTTPException):
+                _reporting_window(start, end, now)
 
 
 if __name__ == "__main__":

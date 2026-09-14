@@ -53,7 +53,7 @@ def _storage_interval(previous, current, current_price, seconds):
                 "provisioned_throughput_mibps", "tags"),
         "fsx": ("filesystem_type", "storage_capacity_gib", "storage_type",
                 "deployment_type", "throughput_capacity",
-                "per_unit_storage_throughput", "tags"),
+                "per_unit_storage_throughput", "drive_cache_type", "tags"),
     }[service]
     old, new = previous["metadata"], current["metadata"]
     if any(old.get(field) != new.get(field) for field in fields):

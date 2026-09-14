@@ -416,6 +416,7 @@ def _fsx(client, region, now):
                     "deployment_type": configuration.get("DeploymentType"),
                     "throughput_capacity": configuration.get("ThroughputCapacity"),
                     "per_unit_storage_throughput": configuration.get("PerUnitStorageThroughput"),
+                    "drive_cache_type": configuration.get("DriveCacheType"),
                     "tags": tags,
                 },
             )

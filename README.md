@@ -2,7 +2,11 @@
 
 Cloud resource consumption and team cost governance.
 
-**Status: development prototype.** The hosted dashboard uses sample data. It is not connected to AWS, the Python API, or PostgreSQL. No SNS messages are published. Do not use its figures for chargeback, budget enforcement, or production decisions.
+**Status: read-only pilot.** A local Compose deployment can show live stored
+inventory and observed cost intervals from its Python API and PostgreSQL. The
+separate hosted dashboard uses sample data. No SNS messages are published. Do
+not use partial observed figures for chargeback, budget enforcement, or
+production decisions.
 
 ## Sample dashboard and features
 
@@ -22,7 +26,7 @@ Sample teams demonstrate normal usage, an 80% warning and a monthly-limit overru
 
 | Feature | Available in the prototype | Remaining integration |
 | --- | --- | --- |
-| Overview | Sample KPIs, service breakdown and chart tooltips | Live cost aggregates |
+| Overview | Live observed KPIs, date range, service breakdown, trend and resource subtotals; separate sample view | Complete account cost aggregates |
 | Resources | Search by name, ID or team; service and region filters; live stored inventory view | Complete cost dimensions for every collected service |
 | Team limits | Sample states plus locally persisted pilot limits | Complete-cost evaluation and SNS delivery |
 | Data quality | Sample coverage and freshness presentation | Measured pricing and collection health |
@@ -118,7 +122,7 @@ From the repository root, using Python 3.13:
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend python3 -m unittest discover -s backend/tests -v
 ```
 
-The current suite contains 60 tests. No AWS account is required. Source-level UI
+The current suite contains 64 tests. No AWS account is required. Source-level UI
 checks are not browser tests.
 
 See the [developer guide](docs/developer-guide.md) for frontend and API setup.

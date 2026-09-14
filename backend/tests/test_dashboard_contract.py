@@ -5,6 +5,7 @@ import unittest
 PAGE = (Path(__file__).resolve().parents[2] / "app/page.tsx").read_text()
 MANAGEMENT = (Path(__file__).resolve().parents[2] / "app/management.tsx").read_text()
 ONBOARDING = (Path(__file__).resolve().parents[2] / "app/aws-onboarding.ts").read_text()
+LIVE_DASHBOARD = (Path(__file__).resolve().parents[2] / "app/live-dashboard.tsx").read_text()
 
 class DashboardContractTests(unittest.TestCase):
     def test_management_views_are_wired(self):
@@ -53,3 +54,10 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn("Resource: !Ref AlertTopic", ONBOARDING)
         for forbidden in ("PRIVATE KEY-----", "ec2:StopInstances", "ec2:TerminateInstances", "lambda:InvokeFunction"):
             self.assertNotIn(forbidden, ONBOARDING)
+
+    def test_default_dashboard_uses_live_aggregates_without_zero_fallbacks(self):
+        self.assertIn('<LiveDashboard onSample=', PAGE)
+        self.assertIn('/overview?start_date=', LIVE_DASHBOARD)
+        self.assertIn('Unavailable periods are not drawn as zero', LIVE_DASHBOARD)
+        self.assertIn('Complete AWS account cost and notifications remain disabled', LIVE_DASHBOARD)
+        self.assertNotIn('$4,137', LIVE_DASHBOARD)

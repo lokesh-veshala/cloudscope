@@ -70,9 +70,21 @@ class StoragePricingTests(unittest.TestCase):
         catalog = FakeCatalog()
         quote = fsx_quote(catalog, "us-east-1", {"filesystem_type": "LUSTRE",
             "storage_type": "SSD", "storage_capacity_gib": 1200,
-            "deployment_type": "PERSISTENT_2"})
+            "deployment_type": "PERSISTENT_2", "per_unit_storage_throughput": 250})
         self.assertEqual(quote["status"], "PARTIAL")
-        self.assertEqual(catalog.calls[0]["attributes"]["deploymentType"], "Persistent")
+        attributes = catalog.calls[0]["attributes"]
+        self.assertEqual(attributes["deploymentOption"], "Persistent")
+        self.assertEqual(attributes["throughputCapacity"], "250")
+        self.assertEqual(attributes["cacheType"], "N/A")
+
+    def test_fsx_lustre_scratch_matches_single_az_catalog_dimension(self):
+        catalog = FakeCatalog()
+        fsx_quote(catalog, "us-east-1", {"filesystem_type": "LUSTRE",
+            "storage_type": "SSD", "storage_capacity_gib": 1200,
+            "deployment_type": "SCRATCH_2"})
+        attributes = catalog.calls[0]["attributes"]
+        self.assertEqual(attributes["deploymentOption"], "Single-AZ")
+        self.assertNotIn("throughputCapacity", attributes)
 
     def test_usage_suffix_does_not_confuse_standard_with_ia(self):
         client = Client([product("USE1-IATimedStorage-ByteHrs"),

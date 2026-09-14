@@ -30,7 +30,8 @@ is measured.
 | EBS io1 and io2 | None | Tiered provisioned-IOPS pricing is not implemented | `UNRESOLVED` |
 | EFS Regional | Standard, IA and Archive stored bytes reported by `DescribeFileSystems` | Elastic/provisioned throughput, data access, tiering, early deletion, small-file overhead, backup and transfer | `EFS_STORAGE_PARTIAL` |
 | EFS One Zone | None | Separate One Zone price dimensions | `UNRESOLVED` |
-| FSx Lustre, Windows, ONTAP and OpenZFS | Provisioned SSD/HDD storage when family, storage type and deployment type match one catalog dimension | Throughput capacity, IOPS, backups, data access, cache, monitoring and transfer | `FSX_STORAGE_PARTIAL` |
+| FSx Lustre | Provisioned SSD/HDD storage when deployment, throughput-per-unit and drive-cache dimensions match one catalog dimension | Throughput capacity charges, metadata IOPS, backups, data access, monitoring and transfer | `FSX_STORAGE_PARTIAL` |
+| FSx Windows, ONTAP and OpenZFS | Exact catalog matching is attempted | Family-specific deployment combinations not yet fixture-validated | `FSX_STORAGE_PARTIAL` or `UNRESOLVED` |
 
 The FSx catalog contains family- and deployment-specific products. A newly
 encountered product combination stays unresolved until its live catalog
@@ -85,8 +86,14 @@ deployment type and available throughput fields. The current estimator matches
 only the storage dimension by:
 
 ```text
-Region + file-system family + storage type + deployment type + GB-month unit
+Region + file-system family + storage type + deployment option + operation + GB-month unit
 ```
+
+Lustre persistent products also include per-unit storage throughput and drive
+cache type. Lustre scratch API deployment values map to the catalog's
+`Single-AZ` deployment option. These mappings were checked against the
+published Amazon FSx offer file; omitting them either returns no price or can
+make a persistent lookup ambiguous.
 
 The matched monthly storage amount is prorated per second using the 30-day
 convention in the AWS FSx for Lustre pricing example. The result remains partial
@@ -126,4 +133,5 @@ the corresponding AWS catalog response is understood and regression-tested.
 - [Amazon EFS pricing](https://aws.amazon.com/efs/pricing/)
 - [EFS billing usage types and GB-month calculation](https://docs.aws.amazon.com/efs/latest/ug/billing-usage-reports-understand.html)
 - [Amazon FSx for Lustre pricing](https://aws.amazon.com/fsx/lustre/pricing/)
+- [Amazon FSx current US East (N. Virginia) offer file](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonFSx/current/us-east-1/index.json)
 - [Finding prices in AWS service price list files](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/finding-prices-in-service-price-list-files.html)

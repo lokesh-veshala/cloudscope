@@ -1,4 +1,18 @@
 .management-stack { display: grid; gap: 18px; }
+.top-actions select { height: 37px; border: 1px solid #dce2eb; border-radius: 8px; background: white; padding: 0 30px 0 10px; color: #40506a; }
+.live-date { display: flex; gap: 8px; align-items: end; }
+.live-date label { display: grid; gap: 4px; color: #8d98ab; font-size: 9px; font-weight: 800; letter-spacing: .1em; }
+.live-date input,.live-date button { height: 38px; border: 1px solid #dce2eb; border-radius: 8px; background: white; color: #465570; padding: 0 10px; }
+.live-date button { background: #edf3ff; color: #244fae; font-weight: 700; }
+.guardrail.amber { border-color: #f0d49c; background: #fff8e9; color: #a06b19; }
+.guardrail.amber b { color: #6f4b14; }.guardrail.amber div span { color: #806b48; }.guardrail.amber>span { border-color: #deb96c; }
+.guardrail.error { border-color: #efbcbc; background: #fff0f0; color: #b94950; }.guardrail.error b { color: #8f3036; }.guardrail.error div span { color: #995a5e; }
+.live-service { grid-template-columns: 16px 8px 38px 1fr 95px; position: relative; margin-bottom: 9px; }
+.live-service small { grid-column: 4 / -1; color: #8a95a7; text-align: right; font-size: 9px; margin-top: -7px; }
+.live-empty-chart { height: 100%; display: grid; place-items: center; align-content: center; gap: 8px; color: #8a95a7; }.live-empty-chart svg { color: #316cf4; }.live-empty-chart span { font-size: 11px; }
+.live-limit { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid #edf0f5; }.live-limit>div { display: grid; gap: 3px; }.live-limit span { font-size: 10px; color: #7f8ba0; }.live-limit strong { font-size: 16px; }.live-limit strong small { font-weight: 500; color: #8d98aa; }.muted-copy,.live-freshness { color: #738097; font-size: 11px; line-height: 1.5; }
+.live-limitations { margin-top: 15px; }.live-limitations summary { cursor: pointer; font-weight: 700; }.live-limitations li { margin: 8px 0; color: #647188; }
+@media(max-width:760px){.live-date{width:100%;flex-wrap:wrap}.live-date label{flex:1}.live-date input{width:100%}.live-shell .title-row{flex-wrap:wrap}.top-actions select{max-width:155px}.live-limit{grid-template-columns:1fr auto}.live-limit .pill{grid-column:1/-1}}
 .account-row { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto auto; gap: 12px; align-items: center; padding: 16px 0; border-top: 1px solid var(--line); }
 .account-row > div { display: grid; gap: 3px; }
 .account-row span, .account-row small { display: block; }

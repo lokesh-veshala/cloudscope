@@ -1,6 +1,7 @@
 # Read-only integration status
 
-The default screen reads inventory and observed EC2 subtotals from the local API.
+The default screen reads live observed KPIs, service subtotals, a cumulative
+trend, highest-cost resources, inventory and local limits from the local API.
 The sample dashboard is accessible separately. AWS records, credentials and
 certificates are not packaged with the application or committed to Git.
 
@@ -48,7 +49,9 @@ paused until this is explicitly enabled. The scheduler keeps durable jobs, block
 overlapping collection for one account, retries failures three times with backoff,
 and recovers expired leases. The Job history button shows the last 20 attempts.
 Review service counts, unresolved intervals and the observed EC2/storage
-subtotals. The first storage-aware collection can record a metadata transition;
+subtotals in the default live dashboard. Date selection accepts one to 90
+inclusive UTC days and does not fill unobserved time with zero. The first
+storage-aware collection can record a metadata transition;
 allow two later stable collections before assessing coverage. Add a local
 monthly limit using a tag that exists in your account. No additional AWS write
 permissions are required.

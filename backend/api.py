@@ -4,7 +4,7 @@ import json
 import os
 import re
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID
 from decimal import Decimal
 from observed_costs import estimate_observed_interval
@@ -44,7 +44,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="CloudScope API", version="1.2.0", lifespan=lifespan)
+app = FastAPI(title="CloudScope API", version="1.3.0", lifespan=lifespan)
 allowed_origins = [
     origin.strip()
     for origin in os.environ.get(
@@ -453,20 +453,85 @@ def create_pilot_limit(account_id: UUID, payload: PilotLimitCreate):
     return {"id": result, "notification_enabled": False}
 
 
+def _reporting_window(start_date: date | None, end_date: date | None,
+                      now: datetime) -> tuple[datetime, datetime]:
+    if (start_date is None) != (end_date is None):
+        raise HTTPException(422, "start_date and end_date must be provided together")
+    if start_date is None:
+        return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0), now
+    days = (end_date - start_date).days + 1
+    if days < 1 or days > 90:
+        raise HTTPException(422, "date range must contain 1 to 90 ordered UTC days")
+    start = datetime.combine(start_date, time.min, tzinfo=timezone.utc)
+    end = min(datetime.combine(end_date + timedelta(days=1), time.min,
+                               tzinfo=timezone.utc), now)
+    if start >= end:
+        raise HTTPException(422, "date range must begin before the current UTC time")
+    return start, end
+
+
 @app.get("/api/v1/accounts/{account_id}/overview")
-def live_overview(account_id: UUID):
+def live_overview(account_id: UUID, start_date: date | None = None,
+                  end_date: date | None = None):
     account = _account(account_id)
     now = datetime.now(timezone.utc)
-    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    # Clip intervals crossing the UTC month boundary; decimal math stays in PostgreSQL.
+    start, end = _reporting_window(start_date, end_date, now)
+    # Clip intervals at the selected UTC range; decimal math stays in PostgreSQL.
     subtotal = "SUM(c.amount_usd * EXTRACT(EPOCH FROM (LEAST(c.usage_end,:end)-GREATEST(c.usage_start,:start))) / EXTRACT(EPOCH FROM (c.usage_end-c.usage_start)))"
     scope = "FROM observed_costs c JOIN resources r ON r.id=c.resource_id WHERE r.cloud_account_id=:id AND c.usage_end>:start AND c.usage_start<:end"
-    args = {"id": account_id, "start": start, "end": now}
+    args = {"id": account_id, "start": start, "end": end}
     with engine.connect() as connection:
-        services = rows(connection.execute(text("""SELECT provider_resource_type AS service, count(*) AS resources,
-            min(first_seen) AS first_observed, max(last_seen) AS last_observed
-            FROM resources WHERE cloud_account_id=:id GROUP BY provider_resource_type ORDER BY provider_resource_type"""), {"id": account_id}))
+        services = rows(connection.execute(text("""SELECT provider_resource_type AS service,
+            count(*) AS resources, min(first_seen) AS first_observed,
+            max(last_seen) AS last_observed,
+            count(*) FILTER (WHERE metadata #>> '{pricing,status}' = 'COMPLETE') AS complete_rates,
+            count(*) FILTER (WHERE metadata #>> '{pricing,status}' = 'PARTIAL') AS partial_rates,
+            count(*) FILTER (WHERE metadata #>> '{pricing,status}' = 'ESTIMATED') AS estimated_rates,
+            count(*) FILTER (WHERE metadata #>> '{pricing,status}' IN ('UNRESOLVED','NOT_APPLICABLE')
+                OR metadata #>> '{pricing,status}' IS NULL) AS unresolved_rates
+            FROM resources WHERE cloud_account_id=:id AND deleted_at IS NULL
+            GROUP BY provider_resource_type ORDER BY provider_resource_type"""), {"id": account_id}))
         costs = rows(connection.execute(text(f"SELECT c.basis, count(*) AS intervals, {subtotal} AS amount_usd {scope} GROUP BY c.basis"), args))
+        summary = dict(connection.execute(text(f"""SELECT count(*) AS intervals,
+            count(*) FILTER (WHERE c.amount_usd IS NOT NULL) AS priced_intervals,
+            count(*) FILTER (WHERE c.amount_usd IS NULL) AS unresolved_intervals,
+            {subtotal} AS observed_subtotal_usd {scope}"""), args).mappings().one())
+        service_costs = rows(connection.execute(text(f"""SELECT r.provider_resource_type AS service,
+            count(*) AS intervals,
+            count(*) FILTER (WHERE c.amount_usd IS NOT NULL) AS priced_intervals,
+            count(*) FILTER (WHERE c.amount_usd IS NULL) AS unresolved_intervals,
+            {subtotal} AS amount_usd {scope}
+            GROUP BY r.provider_resource_type ORDER BY amount_usd DESC NULLS LAST"""), args))
+        trend = rows(connection.execute(text("""WITH daily AS (
+            SELECT bucket.day::date AS day,
+              SUM(c.amount_usd * EXTRACT(EPOCH FROM (
+                LEAST(c.usage_end, :end, bucket.day + interval '1 day') -
+                GREATEST(c.usage_start, :start, bucket.day))) /
+                EXTRACT(EPOCH FROM (c.usage_end-c.usage_start))) AS daily_usd,
+              count(*) AS intervals
+            FROM observed_costs c
+            JOIN resources r ON r.id=c.resource_id
+            CROSS JOIN LATERAL generate_series(
+              date_trunc('day', GREATEST(c.usage_start,:start)),
+              date_trunc('day', LEAST(c.usage_end,:end)-interval '1 microsecond'),
+              interval '1 day') AS bucket(day)
+            WHERE r.cloud_account_id=:id AND c.amount_usd IS NOT NULL
+              AND c.usage_end>:start AND c.usage_start<:end
+            GROUP BY bucket.day)
+            SELECT day, daily_usd,
+              SUM(daily_usd) OVER (ORDER BY day) AS cumulative_usd, intervals
+            FROM daily ORDER BY day"""), args))
+        top_resources = rows(connection.execute(text(f"""SELECT r.id, r.name,
+            r.provider_resource_id, r.provider_resource_type AS service,
+            r.region, r.state, r.metadata #>> '{{pricing,status}}' AS pricing_status,
+            {subtotal} AS amount_usd
+            {scope} AND c.amount_usd IS NOT NULL
+            GROUP BY r.id, r.name, r.provider_resource_id,
+              r.provider_resource_type, r.region, r.state, r.metadata
+            ORDER BY amount_usd DESC LIMIT 10"""), args))
+        inventory = dict(connection.execute(text("""SELECT count(*) AS resources,
+            count(*) FILTER (WHERE COALESCE(metadata->'tags','{}'::jsonb) = '{}'::jsonb) AS untagged_resources
+            FROM resources WHERE cloud_account_id=:id AND deleted_at IS NULL"""), {"id": account_id}).mappings().one())
         limits = rows(connection.execute(text("SELECT * FROM pilot_team_limits WHERE cloud_account_id=:id ORDER BY created_at"), {"id": account_id}))
         for limit in limits:
             amount = connection.execute(text(f"SELECT {subtotal} {scope} AND (c.tags ->> :key) = :value"),
@@ -476,9 +541,17 @@ def live_overview(account_id: UUID):
             limit["evaluation_status"] = "WITHHELD_INCOMPLETE_COST_COVERAGE"
     for cost in costs:
         cost["amount_usd"] = str(cost["amount_usd"]) if cost["amount_usd"] is not None else None
-    return {"account_name": account["display_name"], "period_start": start, "period_end": now,
+    summary["observed_subtotal_usd"] = str(summary["observed_subtotal_usd"]) if summary["observed_subtotal_usd"] is not None else None
+    for collection in (service_costs, trend, top_resources):
+        for item in collection:
+            for field in ("amount_usd", "daily_usd", "cumulative_usd"):
+                if field in item and item[field] is not None:
+                    item[field] = str(item[field])
+    return {"account_name": account["display_name"], "period_start": start, "period_end": end,
             "last_collected_at": account["last_collected_at"], "last_error": account["last_error"],
-            "services": services, "observed_costs": costs, "limits": limits,
+            "services": services, "observed_costs": costs, "cost_summary": summary,
+            "service_costs": service_costs, "cost_trend": trend,
+            "top_resources": top_resources, "inventory": inventory, "limits": limits,
             "complete_account_cost_usd": None, "alerts_evaluated": False,
             "limitations": ["Supported EC2 compute and provisioned EBS dimensions are priced",
                 "EFS and FSx values include matched storage dimensions only",

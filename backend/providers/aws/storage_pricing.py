@@ -82,9 +82,18 @@ def fsx_quote(catalog: StorageCatalog, region: str, metadata: dict[str, Any]) ->
     names = {"LUSTRE": "Lustre", "WINDOWS": "Windows", "ONTAP": "ONTAP", "OPENZFS": "OpenZFS"}
     if filesystem not in names or storage_type not in {"SSD", "HDD"} or capacity <= 0 or not deployment:
         raise CatalogMatchError("unsupported or incomplete FSx storage dimensions")
+    attributes = {"productFamily": "Storage", "fileSystemType": names[filesystem],
+                  "storageType": storage_type, "deploymentOption": deployment,
+                  "operation": f"CreateFileSystem:{names[filesystem]}"}
+    if filesystem == "LUSTRE":
+        attributes["cacheType"] = metadata.get("drive_cache_type") or "N/A"
+        throughput = metadata.get("per_unit_storage_throughput")
+        if deployment == "Persistent":
+            if not throughput:
+                raise CatalogMatchError("FSx Lustre persistent throughput dimension is unavailable")
+            attributes["throughputCapacity"] = str(throughput)
     rate = catalog.fetch_one(service_code="AmazonFSx", region_code=region,
-        attributes={"productFamily": "Storage", "fileSystemType": names[filesystem],
-                    "storageType": storage_type, "deploymentType": deployment}, unit="GB-Mo")
+        attributes=attributes, unit="GB-Mo")
     return _quote("PARTIAL", "FSX_STORAGE_PARTIAL", capacity * rate.usd_per_unit,
         [_component("storage", capacity, rate)],
         "throughput capacity, IOPS, backups and transfer charges are excluded",
@@ -95,7 +104,7 @@ def _fsx_deployment(value):
     if not value:
         return None
     if value.startswith("SCRATCH_"):
-        return "Scratch"
+        return "Single-AZ"
     if value.startswith("PERSISTENT_"):
         return "Persistent"
     if value.startswith("SINGLE_AZ"):

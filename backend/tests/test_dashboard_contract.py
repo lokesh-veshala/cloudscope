@@ -7,6 +7,7 @@ MANAGEMENT = (Path(__file__).resolve().parents[2] / "app/management.tsx").read_t
 ONBOARDING = (Path(__file__).resolve().parents[2] / "app/aws-onboarding.ts").read_text()
 LIVE_DASHBOARD = (Path(__file__).resolve().parents[2] / "app/live-dashboard.tsx").read_text()
 LIVE_TEAMS = (Path(__file__).resolve().parents[2] / "app/live-teams.tsx").read_text()
+API = (Path(__file__).resolve().parents[1] / "api.py").read_text()
 
 class DashboardContractTests(unittest.TestCase):
     def test_management_views_are_wired(self):
@@ -80,3 +81,7 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('Test SNS publish', MANAGEMENT)
         self.assertIn('/notifications/test', MANAGEMENT)
         self.assertIn('Publishes one test event', MANAGEMENT)
+
+    def test_team_trend_uses_observed_cost_composite_key(self):
+        self.assertIn("count(m.resource_id)", API)
+        self.assertNotIn("count(m.id)", API)

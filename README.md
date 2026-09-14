@@ -133,7 +133,7 @@ From the repository root, using Python 3.13:
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend python3 -m unittest discover -s backend/tests -v
 ```
 
-The current suite contains 72 tests. No AWS account is required. Source-level UI
+The current suite contains 73 tests. No AWS account is required. Source-level UI
 checks are not browser tests.
 
 See the [developer guide](docs/developer-guide.md) for frontend and API setup.

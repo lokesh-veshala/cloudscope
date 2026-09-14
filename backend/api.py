@@ -45,7 +45,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="CloudScope API", version="1.5.0", lifespan=lifespan)
+app = FastAPI(title="CloudScope API", version="1.5.1", lifespan=lifespan)
 allowed_origins = [
     origin.strip()
     for origin in os.environ.get(
@@ -717,8 +717,8 @@ def team_resources(account_id: UUID, team_id: UUID,
               LEAST(m.usage_end,b.bucket_end)-GREATEST(m.usage_start,b.bucket_start))) /
               EXTRACT(EPOCH FROM (m.usage_end-m.usage_start)))
               FILTER (WHERE m.amount_usd IS NOT NULL) AS amount_usd,
-            count(m.id) FILTER (WHERE m.amount_usd IS NOT NULL) AS priced_intervals,
-            count(m.id) FILTER (WHERE m.amount_usd IS NULL) AS unresolved_intervals
+            count(m.resource_id) FILTER (WHERE m.amount_usd IS NOT NULL) AS priced_intervals,
+            count(m.resource_id) FILTER (WHERE m.amount_usd IS NULL) AS unresolved_intervals
           FROM buckets b LEFT JOIN matching m ON m.usage_end>b.bucket_start
             AND m.usage_start<b.bucket_end
           GROUP BY b.bucket_start ORDER BY b.bucket_start"""),

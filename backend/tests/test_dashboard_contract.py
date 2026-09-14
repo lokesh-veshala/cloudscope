@@ -37,7 +37,7 @@ class DashboardContractTests(unittest.TestCase):
         self.assertNotIn("Verified snapshot refreshed", PAGE)
         self.assertNotIn("SNS message verified", PAGE)
         self.assertIn("No live AWS request was made", PAGE)
-        self.assertIn("No real alerts have been sent", MANAGEMENT)
+        self.assertIn("No automatic threshold event has been created yet", MANAGEMENT)
 
     def test_live_account_actions_are_wired(self):
         for marker in ('"/api/v1/accounts"', '"test-connection"', '"collect"', "Register account locally"):
@@ -61,7 +61,7 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('<LiveDashboard onSample=', PAGE)
         self.assertIn('/overview?start_date=', LIVE_DASHBOARD)
         self.assertIn('Unavailable periods are not drawn as zero', LIVE_DASHBOARD)
-        self.assertIn('Complete AWS account cost and notifications remain disabled', LIVE_DASHBOARD)
+        self.assertIn('Automatic 80% and 100% alerts evaluate only complete month-to-date team costs', LIVE_DASHBOARD)
         self.assertNotIn('$4,137', LIVE_DASHBOARD)
 
     def test_live_overview_has_adjustable_five_minute_trend(self):
@@ -77,7 +77,7 @@ class DashboardContractTests(unittest.TestCase):
     def test_live_teams_support_exact_and_or_filters_and_drilldown(self):
         self.assertIn('label:"Teams & limits"', LIVE_DASHBOARD)
         for marker in ('"AND"|"OR"', 'Preview matched resources', '/teams/preview',
-                       '/resources?start_date=', 'case-sensitively', 'WITHHELD'):
+                       '/resources?start_date=', 'case-sensitively', 'BLOCKED'):
             self.assertIn(marker, LIVE_TEAMS)
         self.assertNotIn('status: "Normal"', LIVE_TEAMS)
 
@@ -91,6 +91,8 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('Test SNS publish', MANAGEMENT)
         self.assertIn('/notifications/test', MANAGEMENT)
         self.assertIn('Publishes one test event', MANAGEMENT)
+        self.assertIn('/api/v1/alerts', MANAGEMENT)
+        self.assertIn('Update cadence', MANAGEMENT)
 
     def test_team_trend_uses_observed_cost_composite_key(self):
         self.assertIn("count(m.resource_id)", API)

@@ -21,8 +21,8 @@
    pricing coverage.
 
 No certificate, private key, AWS profile, inventory, or account-specific output
-belongs in Git. Collection is read-only. SNS publication and limit evaluation
-remain disabled until complete usage and pricing intervals are implemented.
+belongs in Git. Collection is read-only. Automatic SNS publication is limited to
+the approved topic and only occurs after complete-cost safety checks pass.
 
 Automatic collection is opt-in for each connected account. Select a cadence of
 2, 5 or 10 minutes and choose **Enable automatic**. Use **Job history** to inspect
@@ -63,7 +63,8 @@ The demo can be used to review the interface and agree on requirements. Do not e
    rules. Choose **ALL conditions (AND)** when every rule must match or **ANY
    condition (OR)** when one rule is sufficient. Preview the exact current
    matches before saving. Select a saved team card to inspect its resources.
-   Limit evaluation stays withheld while cost coverage is incomplete.
+   Automatic 80% and 100% evaluation runs after collections. The status stays
+   **BLOCKED** while month-to-date cost coverage is incomplete.
    Use the delete icon to remove only the local team definition; it never
    changes or deletes AWS resources. Open a team and select **View history** on
    a resource to see observed interval start/end times, duration, calculation
@@ -74,11 +75,12 @@ The demo can be used to review the interface and agree on requirements. Do not e
 7. Open Cloud Accounts to register and test one non-production AWS account. The
    Shared Engineering menu still identifies the demo workspace and does not yet
    switch the main dashboard to live data.
-8. Open Notifications or Alert History. No automatic threshold notification is
-   sent. Under **Cloud accounts**, **Test SNS publish** publishes one explicitly
+8. Open Notifications or Alert History. Under **Cloud accounts**, **Test SNS
+   publish** publishes one explicitly
    marked test event to the registered topic. If the customer has manually
    subscribed a Lambda, SNS invokes it. This verifies delivery only and does not
-   enable automatic threshold alerts.
+   prove cost eligibility. Eligible automatic events have
+   `event_type=COST_THRESHOLD_EXCEEDED`, a stable event ID and `is_test=false`.
 9. In Settings, select table spacing and save it on this device. Loading the saved preference applies it again. This is not a shared organization setting.
 10. Refresh reloads the demo indication; it does not contact AWS.
 

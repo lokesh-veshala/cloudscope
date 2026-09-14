@@ -11,6 +11,7 @@ from providers.aws.collector import (
     _fsx,
     price_running_ec2,
     publish_sns_test,
+    publish_threshold_alert,
     validate_connection,
 )
 
@@ -143,6 +144,22 @@ class CollectorTests(unittest.TestCase):
             datetime(2026, 9, 14, tzinfo=timezone.utc), "event-example")
         self.assertFalse(result["published"])
         self.assertNotIn("certificate secret detail", result["error"])
+
+    @patch("providers.aws.collector.session_for")
+    def test_automatic_threshold_payload_is_not_a_test(self, session_for):
+        client = SnsClient()
+        session_for.return_value.client.return_value = client
+        payload = {"event_type":"COST_THRESHOLD_EXCEEDED",
+                   "event_id":"stable-event", "threshold_percent":"80",
+                   "is_test":False, "automatic_threshold_alert":True}
+        result = publish_threshold_alert(
+            AwsAccountConfig("123456789012", "us-east-1", "test"),
+            "arn:aws:sns:us-east-1:123456789012:cloudscope-test", payload)
+        self.assertTrue(result["published"])
+        self.assertIn('"automatic_threshold_alert":true', client.request["Message"])
+        self.assertIn('"is_test":false', client.request["Message"])
+        self.assertEqual(client.request["MessageAttributes"]["event_type"]["StringValue"],
+                         "COST_THRESHOLD_EXCEEDED")
 
     @patch("providers.aws.collector.Ec2OnDemandCatalog.fetch_linux_shared")
     @patch("providers.aws.collector.session_for")

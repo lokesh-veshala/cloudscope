@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS cloud_accounts (
   last_collected_at timestamptz,
   last_error text,
   collection_enabled boolean NOT NULL DEFAULT false,
-  collection_interval_seconds integer NOT NULL DEFAULT 300 CHECK (collection_interval_seconds BETWEEN 120 AND 3600),
+  collection_interval_seconds integer NOT NULL DEFAULT 120 CHECK (collection_interval_seconds BETWEEN 120 AND 3600),
   next_collection_at timestamptz,
   enabled boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -32,6 +32,7 @@ ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS last_error text;
 ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS collection_enabled boolean NOT NULL DEFAULT false;
 ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS collection_interval_seconds integer NOT NULL DEFAULT 300;
 ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS next_collection_at timestamptz;
+ALTER TABLE cloud_accounts ALTER COLUMN collection_interval_seconds SET DEFAULT 120;
 
 CREATE TABLE IF NOT EXISTS resources (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -209,6 +210,44 @@ ALTER TABLE pilot_team_limits ALTER COLUMN filter_expression SET NOT NULL;
 CREATE INDEX IF NOT EXISTS pilot_team_limits_account_idx ON pilot_team_limits(cloud_account_id, created_at);
 CREATE INDEX IF NOT EXISTS pilot_team_limits_active_account_idx
   ON pilot_team_limits(cloud_account_id, created_at) WHERE deleted_at IS NULL;
+CREATE TABLE IF NOT EXISTS pilot_alert_evaluations (
+  team_id uuid NOT NULL REFERENCES pilot_team_limits(id),
+  period_start timestamptz NOT NULL,
+  configuration_version integer NOT NULL,
+  threshold_percent numeric(8,4) NOT NULL,
+  confirmation_count integer NOT NULL DEFAULT 0 CHECK (confirmation_count >= 0),
+  last_data_as_of timestamptz,
+  last_decision text NOT NULL,
+  last_reason text,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(team_id, period_start, configuration_version, threshold_percent)
+);
+CREATE TABLE IF NOT EXISTS pilot_threshold_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  cloud_account_id uuid NOT NULL REFERENCES cloud_accounts(id),
+  team_id uuid NOT NULL REFERENCES pilot_team_limits(id),
+  configuration_version integer NOT NULL,
+  period_start timestamptz NOT NULL,
+  period_end timestamptz NOT NULL,
+  threshold_percent numeric(8,4) NOT NULL,
+  estimated_cost_usd numeric(20,6) NOT NULL CHECK(estimated_cost_usd >= 0),
+  limit_usd numeric(20,6) NOT NULL CHECK(limit_usd > 0),
+  usage_percent numeric(20,6) NOT NULL CHECK(usage_percent >= 0),
+  pricing_coverage numeric(8,7) NOT NULL CHECK(pricing_coverage = 1),
+  event_type text NOT NULL DEFAULT 'COST_THRESHOLD_EXCEEDED'
+    CHECK(event_type = 'COST_THRESHOLD_EXCEEDED'),
+  status text NOT NULL CHECK(status IN ('PENDING','PUBLISHED','RETRY','FAILED')),
+  attempt_count integer NOT NULL DEFAULT 0 CHECK(attempt_count >= 0),
+  next_attempt_at timestamptz NOT NULL DEFAULT now(),
+  topic_arn text NOT NULL,
+  sns_message_id text,
+  error_message text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  published_at timestamptz,
+  UNIQUE(team_id, period_start, configuration_version, threshold_percent)
+);
+CREATE INDEX IF NOT EXISTS pilot_threshold_events_delivery_idx
+  ON pilot_threshold_events(status, next_attempt_at);
 CREATE TABLE IF NOT EXISTS notification_deliveries (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   cloud_account_id uuid NOT NULL REFERENCES cloud_accounts(id),

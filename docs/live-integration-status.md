@@ -22,9 +22,11 @@ observation. Gaps, changed tags, changed rates and unsupported dimensions
 produce unresolved records, not zero-dollar costs. Spot fallback assumes 42%
 off the matching On-Demand rate and is visibly separated from other estimates.
 
-Team limits persist in PostgreSQL and select interval ownership by exact tag key
-and value. They display partial observed subtotals. They do not evaluate warning
-thresholds or publish notifications: complete cost coverage is not available.
+Team limits persist in PostgreSQL and select interval ownership by exact tag
+rules. Every successful collection evaluates 80% and 100% thresholds. Partial
+observed subtotals remain visible, but only complete and fresh UTC month-to-date
+evidence can advance confirmation or publish SNS. Two distinct qualifying
+observations are required, and each team/month/version/threshold is emitted once.
 
 ## Deployment update
 
@@ -44,8 +46,9 @@ the internal port stays 8000. The web service uses a temporary .vinext directory
 so a stopped container's development lock is not reused on restart.
 
 In the GUI, select the registered account and test its connection. Choose a 2,
-5 or 10-minute cadence and enable automatic collection. Existing accounts remain
-paused until this is explicitly enabled. The scheduler keeps durable jobs, blocks
+5 or 10-minute cadence and enable or update automatic collection; two minutes is
+the default for new accounts. Existing account rows retain their saved cadence
+until **Update cadence** is selected. The scheduler keeps durable jobs, blocks
 overlapping collection for one account, retries failures three times with backoff,
 and recovers expired leases. The Job history button shows the last 20 attempts.
 Review service counts, unresolved intervals and the observed EC2/storage
@@ -66,7 +69,8 @@ environment; deployment acceptance must verify those integrations.
 
 RDS, S3 and network usage costs, complete EFS/FSx billing dimensions,
 historical Spot integration, concurrent worker-pool scaling, retention cleanup,
-RBAC, TLS termination and notification delivery remain incomplete. The Compose
+RBAC and TLS termination remain incomplete. Automatic SNS delivery requires VM
+acceptance testing with a complete eligible team snapshot. The Compose
 frontend is a development server and the API has no authentication. Keep this
 pilot on a restricted network. A read-only collector does not establish that
 its deployed IAM policy is read-only; review that policy separately.

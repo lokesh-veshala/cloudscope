@@ -69,6 +69,35 @@ def publish_sns_test(config: AwsAccountConfig, topic_arn: str,
         return {"published": False, "error": _safe_error(exc)}
 
 
+def publish_threshold_alert(config: AwsAccountConfig, topic_arn: str,
+                            payload: dict[str, Any]) -> dict[str, Any]:
+    """Publish one idempotency-keyed automatic threshold event to SNS."""
+    try:
+        topic_region = topic_arn.split(":", 5)[3]
+        client = session_for(config).client(
+            "sns", region_name=topic_region, config=AWS_CONFIG)
+        threshold = payload["threshold_percent"]
+        response = client.publish(
+            TopicArn=topic_arn,
+            Subject=f"CloudScope cost threshold exceeded: {threshold}%",
+            Message=json.dumps(payload, separators=(",", ":"), sort_keys=True),
+            MessageAttributes={
+                "event_type": {"DataType": "String",
+                               "StringValue": "COST_THRESHOLD_EXCEEDED"},
+                "threshold_percent": {"DataType": "Number",
+                                      "StringValue": str(threshold)},
+                "is_test": {"DataType": "String", "StringValue": "false"},
+            },
+        )
+        message_id = response.get("MessageId")
+        if not message_id:
+            return {"published": False, "error": "SNS did not return a message ID"}
+        return {"published": True, "message_id": message_id,
+                "event_type": "COST_THRESHOLD_EXCEEDED"}
+    except Exception as exc:
+        return {"published": False, "error": _safe_error(exc)}
+
+
 def validate_connection(config: AwsAccountConfig) -> dict[str, Any]:
     try:
         session = session_for(config)

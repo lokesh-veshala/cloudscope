@@ -98,9 +98,11 @@ curl --fail http://127.0.0.1:8000/api/v1/quality
 | Endpoint | Actual behavior |
 | --- | --- |
 | GET /healthz | Returns process liveness and current time; does not check dependencies |
-| GET /api/v1/quality | Returns hardcoded coverage=1 and alerting_eligible=true |
+| GET /api/v1/quality | Describes global guardrails; per-team eligibility is evaluated during collection |
 
-**Do not use /api/v1/quality as a production readiness or alarm gate.** Its current response is a placeholder. It does not call the evaluator or check inventory, pricing, usage, credentials or database state.
+**Do not use /api/v1/quality as a per-team alarm gate.** It describes policy but
+does not inspect an account snapshot. Use team evaluation status and durable
+alert history for operational decisions.
 
 Account, resource, observed-cost and team routes are implemented for the local
 pilot. Team endpoints are under `/api/v1/accounts/{account_id}/teams`; preview
@@ -109,8 +111,9 @@ team ID. Resource interval detail is clipped to the requested 1–90 day UTC
 range. The same resource response includes hourly or daily team cost buckets,
 including explicit unresolved and no-observation coverage states. Manual SNS
 test delivery is available at
-`POST /api/v1/accounts/{account_id}/notifications/test`; automatic threshold
-delivery remains disabled.
+`POST /api/v1/accounts/{account_id}/notifications/test`. Automatic threshold
+evaluation runs after successful collections; `GET /api/v1/alerts` exposes its
+durable event and SNS delivery history.
 
 The live overview requests `GET /api/v1/accounts/{account_id}/cost-trend` with
 `window_minutes` between 60 and 10,080. The endpoint returns fixed five-minute

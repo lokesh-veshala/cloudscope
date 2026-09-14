@@ -18,9 +18,10 @@ and current observations must carry the same price, status, source and
 proration rule. A state, tag, size, performance or price transition therefore
 withholds the interval because its exact transition time is unknown.
 
-Storage estimates are not alert eligible. Team-limit evaluation remains off
-until every material billing dimension is implemented and end-to-end coverage
-is measured.
+Complete EBS provisioned-dimension intervals may participate in alert coverage.
+EFS and FSx remain partial and therefore block automatic threshold publication
+for any team containing those resources. Missing or assumed dimensions never
+become alert-eligible merely because a subtotal can be displayed.
 
 ## Coverage matrix
 

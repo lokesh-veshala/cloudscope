@@ -7,13 +7,15 @@ registration, IAM Roles Anywhere profile execution, identity/account validation,
 V1 inventory collectors, resource state/tag history, and strict Linux/shared EC2
 On-Demand catalog matching. Partial service failures are reported explicitly.
 
-Alarm evaluation and SNS publication remain disabled because complete usage and
-price intervals are not implemented. Linux/shared Spot instances may display an
+Automatic 80%/100% evaluation now runs after each successful collection and
+publishes eligible events to the account's approved SNS topic. It remains
+fail-closed when complete calendar-month usage and price evidence is unavailable.
+Linux/shared Spot instances may display an
 explicit 42%-discount fallback against exact On-Demand pricing, but that value is
 classified as estimated and is never alarm-eligible. Windows and non-default
 tenancy remain unresolved.
 
-Validation performed locally: 29 Python tests passed, ESLint passed, and the
+Validation performed locally: 82 Python tests passed, ESLint passed, and the
 Vinext production build passed. PostgreSQL/AWS end-to-end validation must run on
 the test VM because this build environment has neither Docker nor runtime AWS
 credentials.
@@ -45,7 +47,7 @@ Validation date: 2026-09-13 UTC
 | Configurable limit versions and thresholds | Pass (domain) | Immutable policy version and threshold-specific key |
 | False-positive-resistant alarms | Pass (domain) | Complete-coverage gate, freshness gate, double confirmation, deduplication tests |
 | Correct historical team ownership | Pass (schema) | Effective-dated `resource_tag_history` |
-| SNS → Lambda delivery | Ready for integration | Transactional event schema exists; real SNS publisher requires account onboarding |
+| SNS → Lambda delivery | Implemented, VM acceptance required | Durable event, stable ID, publisher, bounded retry and delivery history; subscribed Lambda remains customer-managed |
 | IAM Roles Anywhere | Ready for integration | Credential boundary is specified; requires customer certificate/profile ARNs |
 | EC2, EBS, EFS, FSx, RDS, S3, EIP, ALB/NLB, NAT inventory | Adapter contracts ready | AWS account integration and service collectors remain the next implementation slice |
 | RBAC | Schema/API boundary planned | Identity provider and organization roles are not configured in this demonstration |
@@ -63,7 +65,7 @@ Validation date: 2026-09-13 UTC
 | Responsive behavior | Pass (CSS review) | Desktop, tablet and mobile breakpoints; overflow-safe tables |
 | Horizontal scalability | Architecture ready | Provider/worker boundaries defined; queue implementation requires database job claim logic |
 | 100-account target | Not load-tested | Requires representative connected-account fixtures and AWS throttling tests |
-| 2-minute collection | Not integration-tested | Scheduler/collector implementation is not part of this vertical slice |
+| 2-minute collection | Implemented, VM acceptance required | Default cadence 120 seconds; durable scheduler and editable account cadence |
 | Security | Pass for domain | No static AWS credentials; no mutation APIs; deployment secrets still require customer configuration |
 
 ## Performance evidence
@@ -75,8 +77,13 @@ Validation date: 2026-09-13 UTC
 
 ## Test result
 
-`17/17` unit tests pass after correcting one overly short expected Decimal literal in the test. The implementation itself did not require a precision reduction.
+`82/82` unit and source-contract tests pass. The implementation retains Decimal
+arithmetic for every financial threshold and amount.
 
 ## Release boundary
 
-This is a production-quality vertical slice, not a claim that all AWS collectors are complete. The dashboard is safe to demonstrate. Alarm publishing must remain disabled until a connected account reports full price coverage and the SNS outbox/publisher integration passes its end-to-end tests.
+This is a production-quality vertical slice, not a claim that all AWS collectors
+are complete. Automatic alerting is active but fail-closed: incomplete teams
+produce BLOCKED evaluations, not SNS events. VM acceptance must verify schema
+migration, two consecutive eligible collections, SNS publication and subscriber
+idempotency before production reliance.

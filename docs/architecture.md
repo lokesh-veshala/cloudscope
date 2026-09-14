@@ -166,7 +166,9 @@ The evaluator checks numeric bounds, complete supplied pricing coverage, freshne
 
 The deduplication key contains dashboard, period start, limit version and threshold. Limit changes therefore permit a new event. Defaults are a ten-minute maximum age and two confirmations.
 
-READY creates only an in-memory marker. It does not insert a database event, publish SNS, or invoke Lambda. Restarting loses the state. Concurrent evaluation is not protected.
+The live evaluator persists confirmations by team, UTC month, limit version and
+threshold. READY inserts a unique `pilot_threshold_events` row in the same
+transaction. This survives restarts and makes repeated collections idempotent.
 
 The live pilot exposes a separate manual notification test. It records a
 `PENDING` delivery, publishes `CLOUDSCOPE_NOTIFICATION_TEST` to the SNS topic
@@ -176,9 +178,14 @@ automatic threshold alert. A subscribed Lambda is invoked by SNS; CloudScope
 does not request `lambda:InvokeFunction`. This test path is not evidence that
 cost inputs are eligible for automatic limit evaluation.
 
-### Required durable delivery design
+### Durable delivery behavior
 
-Evaluate against a consistent input revision. In one database transaction, update confirmation state, insert the uniquely keyed threshold event, and enqueue an outbox entry. Commit before contacting SNS. A separate publisher claims entries, records attempts and retries transient failures with bounded backoff.
+After a successful collection, CloudScope evaluates the stored snapshot in one
+database transaction, updates confirmation state and inserts the uniquely keyed
+pending event. It commits before contacting SNS. Delivery records attempt count,
+message ID or sanitized error and retries with bounded exponential backoff on a
+later collection. A future dedicated publisher worker can separate retry timing
+from collection cadence without changing the event contract.
 
 A crash after SNS accepts a message but before local acknowledgement can cause retransmission. Database deduplication cannot guarantee exactly-once delivery across that boundary. Include a stable event ID and require idempotency in downstream customer Lambda handlers.
 

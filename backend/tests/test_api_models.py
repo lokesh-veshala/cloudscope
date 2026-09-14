@@ -101,6 +101,10 @@ class ApiModelTests(unittest.TestCase):
             name="HPC", amount_usd="100", baseline_amount_usd="42.123456",
             filter_expression=expression,
         ).baseline_amount_usd, Decimal("42.123456"))
+        self.assertTrue(PilotLimitCreate(
+            name="HPC", amount_usd="100", allow_partial_alerts=True,
+            filter_expression=expression,
+        ).allow_partial_alerts)
         with self.assertRaises(ValidationError):
             PilotLimitCreate(name="HPC", amount_usd="100",
                              baseline_amount_usd="-0.01",

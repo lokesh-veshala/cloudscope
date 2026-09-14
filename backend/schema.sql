@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS cloud_accounts (
   connection_checked_at timestamptz,
   last_collected_at timestamptz,
   last_error text,
+  collection_enabled boolean NOT NULL DEFAULT false,
+  collection_interval_seconds integer NOT NULL DEFAULT 300 CHECK (collection_interval_seconds BETWEEN 120 AND 3600),
+  next_collection_at timestamptz,
   enabled boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(provider, provider_account_id)
@@ -26,6 +29,9 @@ ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS connection_status text NOT N
 ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS connection_checked_at timestamptz;
 ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS last_collected_at timestamptz;
 ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS last_error text;
+ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS collection_enabled boolean NOT NULL DEFAULT false;
+ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS collection_interval_seconds integer NOT NULL DEFAULT 300;
+ALTER TABLE cloud_accounts ADD COLUMN IF NOT EXISTS next_collection_at timestamptz;
 
 CREATE TABLE IF NOT EXISTS resources (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -158,9 +164,14 @@ CREATE TABLE IF NOT EXISTS collection_jobs (
   finished_at timestamptz,
   status text NOT NULL CHECK (status IN ('QUEUED','RUNNING','SUCCEEDED','FAILED')),
   error_code text,
+  attempt_count integer NOT NULL DEFAULT 0,
+  lease_expires_at timestamptz,
   details jsonb NOT NULL DEFAULT '{}'
 );
+ALTER TABLE collection_jobs ADD COLUMN IF NOT EXISTS attempt_count integer NOT NULL DEFAULT 0;
+ALTER TABLE collection_jobs ADD COLUMN IF NOT EXISTS lease_expires_at timestamptz;
 CREATE INDEX IF NOT EXISTS collection_queue_idx ON collection_jobs(status, scheduled_for);
+CREATE INDEX IF NOT EXISTS collection_account_active_idx ON collection_jobs(cloud_account_id, status);
 
 CREATE TABLE IF NOT EXISTS observed_costs (
   resource_id uuid NOT NULL REFERENCES resources(id),

@@ -148,16 +148,16 @@ Incomplete or stale inputs should produce a visible blocked evaluation, not a bu
 
 | Draft table | Purpose | Missing implementation |
 | --- | --- | --- |
-| cloud_accounts | Provider identity and role/topic metadata | Onboarding and secret/certificate lifecycle |
-| resources | Latest inventory | Native collectors and upsert logic |
-| resource_state_history | State intervals | Transition reconciliation |
-| resource_tag_history | Tag intervals | Historical filter/ownership joins |
+| cloud_accounts | Provider identity, connection and collection schedule | Secret/certificate lifecycle and RBAC |
+| resources | Latest inventory | Deletion reconciliation and full service coverage |
+| resource_state_history | Observed state intervals | Transitions hidden between polls |
+| resource_tag_history | Observed ownership intervals | Transitions hidden between polls |
 | pricing_catalog | Price dimensions and effective versions | Ingestion, provenance and invalidation |
 | cost_intervals | Versioned calculated amounts | Materialization and aggregation |
 | dashboards | Account-scoped filter expression | Validated filter AST and RBAC |
 | dashboard_limits | Versioned limits | Editing API and policy validation |
 | threshold_events | Unique threshold records | Transactional evaluator and publisher |
-| collection_jobs | Scheduled work | Claims, leases, retries and recovery |
+| collection_jobs | Durable scheduled work with leases and retries | Concurrent worker-pool capacity validation |
 
 There are no user/role/grant tables, usage metric tables, audit-log table, outbox-attempt table, or schema migration runner. JSONB filter storage does not implement an AND/OR query language.
 

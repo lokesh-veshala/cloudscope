@@ -6,7 +6,7 @@ certificates are not packaged with the application or committed to Git.
 
 ## What the pilot calculates
 
-Each manual collection stores normalized inventory and changes in state and tags.
+Each manual or scheduled collection stores normalized inventory and changes in state and tags.
 Two observations no more than ten minutes apart can produce a compute interval
 when the instance remains running, pricing and ownership dimensions match, and
 the prior price is valid and fresh. This assumes continuous operation between
@@ -39,10 +39,14 @@ Keep the existing local .env and certificate/config mounts. Do not run
 the internal port stays 8000. The web service uses a temporary .vinext directory
 so a stopped container's development lock is not reused on restart.
 
-In the GUI, select the registered account, test its connection, then collect twice
-within ten minutes. Review service counts, unresolved intervals and the observed
-EC2 subtotal. Add a local monthly limit using a tag that exists in your account.
-No additional AWS write permissions are required.
+In the GUI, select the registered account and test its connection. Choose a 2,
+5 or 10-minute cadence and enable automatic collection. Existing accounts remain
+paused until this is explicitly enabled. The scheduler keeps durable jobs, blocks
+overlapping collection for one account, retries failures three times with backoff,
+and recovers expired leases. The Job history button shows the last 20 attempts.
+Review service counts, unresolved intervals and the observed EC2 subtotal. Add a
+local monthly limit using a tag that exists in your account. No additional AWS
+write permissions are required.
 
 ## Verification and remaining work
 
@@ -52,8 +56,8 @@ Frontend lint and production compilation are checked separately. This release ha
 not been exercised against PostgreSQL or a live AWS account in the development
 environment; deployment acceptance must verify those integrations.
 
-Multi-service usage costs, historical Spot integration, automatic scheduling,
-retention cleanup, RBAC, TLS termination and notification delivery remain
+Multi-service usage costs, historical Spot integration, concurrent worker-pool
+scaling, retention cleanup, RBAC, TLS termination and notification delivery remain
 incomplete. The Compose frontend is a development server and the API has no
 authentication. Keep this pilot on a restricted network. A read-only collector
 does not establish that its deployed IAM policy is read-only; review that policy

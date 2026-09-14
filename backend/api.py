@@ -43,7 +43,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="CloudScope API", version="1.1.0", lifespan=lifespan)
+app = FastAPI(title="CloudScope API", version="1.2.0", lifespan=lifespan)
 allowed_origins = [
     origin.strip()
     for origin in os.environ.get(
@@ -75,7 +75,9 @@ def list_accounts():
                     """SELECT id, provider_account_id, display_name, region,
                     credential_profile, role_arn, roles_anywhere_profile_arn,
                     trust_anchor_arn, sns_topic_arn, connection_status,
-                    connection_checked_at, last_collected_at, last_error, created_at
+                    connection_checked_at, last_collected_at, last_error,
+                    collection_enabled, collection_interval_seconds,
+                    next_collection_at, created_at
                     FROM cloud_accounts ORDER BY created_at"""
                 )
             )
@@ -147,6 +149,41 @@ def _config(account) -> AwsAccountConfig:
     )
 
 
+class CollectionScheduleUpdate(BaseModel):
+    enabled: bool
+    interval_seconds: int = Field(ge=120, le=600)
+
+
+@app.post("/api/v1/accounts/{account_id}/collection-schedule")
+def update_collection_schedule(account_id: UUID, payload: CollectionScheduleUpdate):
+    account = _account(account_id)
+    if payload.enabled and account["connection_status"] != "CONNECTED":
+        raise HTTPException(409, "run a successful connection test before scheduling")
+    with engine.begin() as connection:
+        row = connection.execute(text("""UPDATE cloud_accounts
+            SET collection_enabled=:enabled,
+                collection_interval_seconds=:interval,
+                next_collection_at=CASE WHEN :enabled THEN now() ELSE NULL END
+            WHERE id=:id RETURNING collection_enabled,
+                collection_interval_seconds, next_collection_at"""),
+            {"enabled": payload.enabled, "interval": payload.interval_seconds,
+             "id": account_id}).mappings().one()
+        if not payload.enabled:
+            connection.execute(text("""DELETE FROM collection_jobs
+                WHERE cloud_account_id=:id AND status='QUEUED'"""), {"id": account_id})
+    return dict(row)
+
+
+@app.get("/api/v1/accounts/{account_id}/collection-jobs")
+def account_collection_jobs(account_id: UUID):
+    _account(account_id)
+    with engine.connect() as connection:
+        return rows(connection.execute(text("""SELECT id, collector, scheduled_for,
+            started_at, finished_at, status, attempt_count, error_code, details
+            FROM collection_jobs WHERE cloud_account_id=:id
+            ORDER BY scheduled_for DESC LIMIT 20"""), {"id": account_id}))
+
+
 @app.post("/api/v1/accounts/{account_id}/test-connection")
 def test_account_connection(account_id: UUID):
     account = _account(account_id)
@@ -175,6 +212,23 @@ def collect_account(account_id: UUID):
     account = _account(account_id)
     if account["connection_status"] != "CONNECTED":
         raise HTTPException(409, "run a successful connection test before collection")
+    with engine.connect() as lock_connection:
+        locked = lock_connection.execute(
+            text("SELECT pg_try_advisory_lock(hashtextextended(:key, 0))"),
+            {"key": str(account_id)},
+        ).scalar_one()
+        if not locked:
+            raise HTTPException(409, "collection already running for this account")
+        try:
+            return _collect_account(account_id, account)
+        finally:
+            lock_connection.execute(
+                text("SELECT pg_advisory_unlock(hashtextextended(:key, 0))"),
+                {"key": str(account_id)},
+            )
+
+
+def _collect_account(account_id: UUID, account):
     discovered, failures = collect_resources(_config(account))
     prices = price_running_ec2(_config(account), discovered)
     complete_prices = sum(

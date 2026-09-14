@@ -31,6 +31,7 @@ Sample teams demonstrate normal usage, an 80% warning and a monthly-limit overru
 | Settings | Device-local display preferences | Shared configuration persistence |
 | Date selection | Ordered ranges up to 90 days; unavailable state outside the demo range | Historical data queries |
 | Cost engine | Decimal interval calculations and fixture-tested EC2 pricing adapters | Verified live catalog and complete service billing dimensions |
+| Collection scheduler | Opt-in durable jobs, account overlap lock, lease recovery and bounded retry | Concurrent worker-pool capacity testing for 100 accounts |
 
 ### Run the sample on a development VM
 

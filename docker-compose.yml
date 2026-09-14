@@ -36,6 +36,19 @@ services:
     depends_on:
       api: { condition: service_healthy }
     restart: unless-stopped
+  scheduler:
+    build: ./backend
+    command: ["python", "scheduler.py"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://cloudscope:cloudscope@postgres:5432/cloudscope
+      CLOUDSCOPE_INTERNAL_API_URL: http://api:8000
+      CLOUDSCOPE_SCHEDULER_POLL_SECONDS: "10"
+    depends_on:
+      postgres: { condition: service_healthy }
+      api: { condition: service_healthy }
+    read_only: true
+    tmpfs: ["/tmp"]
+    restart: unless-stopped
   postgres:
     image: postgres:17.6-alpine
     environment:

@@ -24,6 +24,11 @@ No certificate, private key, AWS profile, inventory, or account-specific output
 belongs in Git. Collection is read-only. SNS publication and limit evaluation
 remain disabled until complete usage and pricing intervals are implemented.
 
+Automatic collection is opt-in for each connected account. Select a cadence of
+2, 5 or 10 minutes and choose **Enable automatic**. Use **Job history** to inspect
+queued, running, successful and failed attempts. Pausing removes queued attempts;
+an attempt already running is allowed to finish.
+
 If historical Spot coverage is unavailable, CloudScope records a provisional
 Spot estimate equal to 58% of the exact matching On-Demand rate (a 42% assumed
 discount). It is labeled as an assumption and cannot be used for threshold

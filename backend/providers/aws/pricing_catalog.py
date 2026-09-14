@@ -101,6 +101,70 @@ class Ec2OnDemandCatalog:
         return result
 
 
+class StorageCatalog:
+    """Strict lookup for one On-Demand storage price dimension."""
+
+    def __init__(self, pricing_client: Any) -> None:
+        self.client = pricing_client
+        self._cache: dict[tuple, CatalogPrice] = {}
+
+    def fetch_one(self, *, service_code: str, region_code: str,
+                  attributes: dict[str, str], unit: str,
+                  usage_type_suffix: str | None = None) -> CatalogPrice:
+        cache_key = (service_code, region_code, tuple(sorted(attributes.items())), unit,
+                     usage_type_suffix)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+        filters = [Ec2OnDemandCatalog._term("regionCode", region_code)]
+        filters.extend(Ec2OnDemandCatalog._term(key, value)
+                       for key, value in attributes.items())
+        documents: list[dict[str, Any]] = []
+        token = None
+        while True:
+            request: dict[str, Any] = {"ServiceCode": service_code,
+                "Filters": filters, "FormatVersion": "aws_v1", "MaxResults": 100}
+            if token:
+                request["NextToken"] = token
+            response = self.client.get_products(**request)
+            documents.extend(json.loads(item) for item in response.get("PriceList", []))
+            token = response.get("NextToken")
+            if not token:
+                break
+        candidates = self._candidates(documents, unit, usage_type_suffix)
+        if len(candidates) != 1:
+            label = usage_type_suffix or ",".join(f"{k}={v}" for k, v in attributes.items())
+            raise CatalogMatchError(
+                f"expected one {service_code} {unit} rate for {label}; received {len(candidates)}")
+        price = candidates[0]
+        if not price.usd_per_unit.is_finite() or price.usd_per_unit <= 0:
+            raise CatalogMatchError(f"invalid {service_code} {unit} rate")
+        self._cache[cache_key] = price
+        return price
+
+    @staticmethod
+    def _candidates(documents, unit, suffix):
+        result = []
+        now = datetime.now(timezone.utc)
+        for document in documents:
+            product = document.get("product", {})
+            attributes = product.get("attributes", {})
+            usage = attributes.get("usagetype", "")
+            if suffix and not (usage == suffix or usage.endswith("-" + suffix)
+                               or usage.endswith(":" + suffix)):
+                continue
+            for term in document.get("terms", {}).get("OnDemand", {}).values():
+                effective = datetime.fromisoformat(term["effectiveDate"].replace("Z", "+00:00"))
+                for rate_code, dimension in term.get("priceDimensions", {}).items():
+                    usd = dimension.get("pricePerUnit", {}).get("USD")
+                    if usd is None or dimension.get("unit") != unit:
+                        continue
+                    if str(dimension.get("beginRange", "0")) not in ("0", "0.0"):
+                        continue
+                    result.append(CatalogPrice(product.get("sku", ""), rate_code,
+                        Decimal(usd), unit, effective, now, dict(attributes)))
+        return result
+
+
 class SpotPriceCatalog:
     """Retrieves timestamped Spot prices; the cost engine performs segmentation."""
 

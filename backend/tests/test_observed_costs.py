@@ -56,3 +56,62 @@ class ObservedCostTests(unittest.TestCase):
         result = estimate_observed_interval(self.previous, self.current, price)
         self.assertEqual(result["basis"], "ASSUMED_SPOT_DISCOUNT")
         self.assertAlmostEqual(result["amount"], Decimal("0.029"))
+
+    def test_ebs_monthly_quote_is_prorated_over_30_days(self):
+        price = {"status": "COMPLETE", "source": "EBS_PROVISIONED",
+                 "monthly_usd": "72", "fetched_at": self.start.isoformat(),
+                 "effective_at": self.start.isoformat(),
+                 "proration": "FIXED_30_DAY_MONTH"}
+        metadata = {"volume_type": "gp3", "size_gib": 100, "iops": 3000,
+                    "throughput": 125, "tags": {"Team": "Example"}, "pricing": price}
+        previous = {"last_seen": self.start, "state": "in-use", "metadata": metadata}
+        current = {"observed_at": self.start+timedelta(minutes=5), "state": "in-use",
+                   "provider_resource_type": "ebs", "metadata": dict(metadata)}
+        result = estimate_observed_interval(previous, current, price)
+        self.assertEqual(result["basis"], "EBS_PROVISIONED")
+        self.assertEqual(result["amount"], Decimal("0.0083333333333333333333333333333333333333"))
+
+    def test_storage_resize_is_withheld(self):
+        price = {"status": "COMPLETE", "source": "EBS_PROVISIONED",
+                 "monthly_usd": "8", "fetched_at": self.start.isoformat(),
+                 "effective_at": self.start.isoformat(),
+                 "proration": "FIXED_30_DAY_MONTH"}
+        old = {"volume_type": "gp3", "size_gib": 100, "iops": 3000,
+               "throughput": 125, "tags": {}, "pricing": price}
+        new = {**old, "size_gib": 200}
+        result = estimate_observed_interval(
+            {"last_seen": self.start, "state": "in-use", "metadata": old},
+            {"observed_at": self.start+timedelta(minutes=5), "state": "in-use",
+             "provider_resource_type": "ebs", "metadata": new}, price)
+        self.assertIsNone(result["amount"])
+
+    def test_efs_uses_actual_utc_calendar_month_length(self):
+        start = datetime(2028, 2, 1, tzinfo=timezone.utc)
+        end = start + timedelta(minutes=5)
+        price = {"status": "PARTIAL", "source": "EFS_STORAGE_PARTIAL",
+                 "monthly_usd": "29", "fetched_at": start.isoformat(),
+                 "effective_at": start.isoformat(),
+                 "proration": "UTC_CALENDAR_MONTH"}
+        metadata = {"size_standard_bytes": 2**30, "size_ia_bytes": 0,
+                    "size_archive_bytes": 0, "availability_zone_name": None,
+                    "throughput_mode": "bursting",
+                    "provisioned_throughput_mibps": None, "tags": {},
+                    "pricing": price}
+        result = estimate_observed_interval(
+            {"last_seen": start, "state": "available", "metadata": metadata},
+            {"observed_at": end, "state": "available",
+             "provider_resource_type": "efs", "metadata": dict(metadata)}, price)
+        self.assertAlmostEqual(result["amount"], Decimal("1") / Decimal("288"))
+
+    def test_unknown_storage_proration_is_withheld(self):
+        price = {"status": "COMPLETE", "source": "EBS_PROVISIONED",
+                 "monthly_usd": "8", "fetched_at": self.start.isoformat(),
+                 "effective_at": self.start.isoformat(), "proration": "UNKNOWN"}
+        metadata = {"volume_type": "gp3", "size_gib": 100, "iops": 3000,
+                    "throughput": 125, "tags": {}, "pricing": price}
+        result = estimate_observed_interval(
+            {"last_seen": self.start, "state": "in-use", "metadata": metadata},
+            {"observed_at": self.start + timedelta(minutes=5), "state": "in-use",
+             "provider_resource_type": "ebs", "metadata": dict(metadata)}, price)
+        self.assertEqual(result["reason"], "invalid_storage_proration")
+        self.assertIsNone(result["amount"])

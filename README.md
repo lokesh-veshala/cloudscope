@@ -23,15 +23,16 @@ Sample teams demonstrate normal usage, an 80% warning and a monthly-limit overru
 | Feature | Available in the prototype | Remaining integration |
 | --- | --- | --- |
 | Overview | Sample KPIs, service breakdown and chart tooltips | Live cost aggregates |
-| Resources | Search by name, ID or team; service and region filters | Native AWS inventory collection |
-| Team limits | Sample progress and threshold states; separate in-memory Python evaluator | Persisted configuration, scheduled evaluation and SNS delivery |
+| Resources | Search by name, ID or team; service and region filters; live stored inventory view | Complete cost dimensions for every collected service |
+| Team limits | Sample states plus locally persisted pilot limits | Complete-cost evaluation and SNS delivery |
 | Data quality | Sample coverage and freshness presentation | Measured pricing and collection health |
-| Cloud accounts | Management view explaining integration status | Roles Anywhere onboarding and connection tests |
+| Cloud accounts | CloudFormation generation, local registration, Roles Anywhere connection test and collection controls | Certificate lifecycle automation and production hardening |
 | Alert history and notifications | Empty-state views | Durable alert history and SNS-to-Lambda integration |
 | Settings | Device-local display preferences | Shared configuration persistence |
 | Date selection | Ordered ranges up to 90 days; unavailable state outside the demo range | Historical data queries |
 | Cost engine | Decimal interval calculations and fixture-tested EC2 pricing adapters | Verified live catalog and complete service billing dimensions |
 | Collection scheduler | Opt-in durable jobs, account overlap lock, lease recovery and bounded retry | Concurrent worker-pool capacity testing for 100 accounts |
+| Storage estimates | EBS provisioned dimensions; EFS and FSx storage-only partial estimates | Remaining filesystem usage dimensions and live catalog acceptance |
 
 ### Run the sample on a development VM
 
@@ -86,8 +87,11 @@ and allowed browser origin. Start with `docker compose up -d --build`. Register
 the stack outputs in Cloud Accounts, run **Test connection**, and only then run
 **Collect now**.
 
-This slice does not publish SNS alerts or display calculated AWS spend. It stores
-resource state/tag history and validates exact Linux/shared EC2 On-Demand rates.
+This slice does not publish SNS alerts or display complete AWS spend. It stores
+resource state/tag history, validates exact Linux/shared EC2 On-Demand rates,
+and calculates conservative observed storage intervals. Supported EBS volume
+dimensions are complete; EFS and FSx are explicitly storage-only and partial.
+See [Storage cost models](docs/storage-cost-models.md) for the coverage matrix.
 Before historical Spot coverage exists, Linux/shared Spot instances use a clearly
 marked 42% discount assumption against the exact On-Demand rate. This fallback
 is excluded from alarm evaluation. Other incomplete dimensions remain unresolved.
@@ -98,11 +102,13 @@ is excluded from alarm evaluation. Other incomplete dimensions remain unresolved
 - Python interval calculator using Decimal arithmetic.
 - Live account registration, Roles Anywhere connection checks, and V1 AWS inventory collectors.
 - EC2 Linux/shared On-Demand catalog adapter and Spot history adapter, exercised with fixtures.
+- Strict EBS, EFS and FSx storage catalog adapters with explicit partial/unresolved outcomes.
 - In-memory threshold evaluator.
-- PostgreSQL state/tag history persistence and a local three-service Compose stack.
+- PostgreSQL state/tag history persistence and a local four-service Compose stack.
 
-The target system still requires usage ingestion, historical pricing persistence,
-server-side authorization, durable scheduling, cost aggregation, and SNS delivery.
+The target system still requires complete multi-service usage ingestion,
+historical pricing persistence, server-side authorization, retention cleanup,
+production-scale scheduling and SNS delivery.
 
 ## Quick verification
 
@@ -112,7 +118,7 @@ From the repository root, using Python 3.13:
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend python3 -m unittest discover -s backend/tests -v
 ```
 
-The current suite contains 29 tests. No AWS account is required. Source-level UI
+The current suite contains 60 tests. No AWS account is required. Source-level UI
 checks are not browser tests.
 
 See the [developer guide](docs/developer-guide.md) for frontend and API setup.

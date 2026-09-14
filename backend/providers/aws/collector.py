@@ -8,7 +8,8 @@ from typing import Any, Callable, Iterable
 import boto3
 from botocore.config import Config
 
-from providers.aws.pricing_catalog import CatalogMatchError, Ec2OnDemandCatalog
+from providers.aws.pricing_catalog import CatalogMatchError, Ec2OnDemandCatalog, StorageCatalog
+from providers.aws.storage_pricing import ebs_quote, efs_quote, fsx_quote
 
 
 AWS_CONFIG = Config(
@@ -209,6 +210,30 @@ def price_running_ec2(
     return result
 
 
+def price_storage_resources(
+    config: AwsAccountConfig, resources: list[dict[str, Any]]
+) -> dict[tuple[str, str], dict[str, Any]]:
+    session = session_for(config)
+    catalog = StorageCatalog(
+        session.client("pricing", region_name="us-east-1", config=AWS_CONFIG))
+    builders = {"ebs": ebs_quote, "efs": efs_quote, "fsx": fsx_quote}
+    result = {}
+    for resource in resources:
+        service = resource["provider_resource_type"]
+        if service not in builders:
+            continue
+        try:
+            quote = builders[service](catalog, resource["region"], resource["metadata"])
+            result[(service, resource["provider_resource_id"])] = quote
+        except (CatalogMatchError, KeyError, ValueError, ArithmeticError) as exc:
+            result[(service, resource["provider_resource_id"])] = {
+                "status": "UNRESOLVED", "reason": str(exc), "alert_eligible": False}
+        except Exception as exc:
+            result[(service, resource["provider_resource_id"])] = {
+                "status": "UNRESOLVED", "reason": _safe_error(exc), "alert_eligible": False}
+    return result
+
+
 def _base(
     resource_type,
     provider_type,
@@ -354,8 +379,13 @@ def _efs(client, region, now):
                 name=item.get("Name") or _name(tags, resource_id),
                 metadata={
                     "size_bytes": item.get("SizeInBytes", {}).get("Value"),
+                    "size_standard_bytes": item.get("SizeInBytes", {}).get("ValueInStandard"),
+                    "size_ia_bytes": item.get("SizeInBytes", {}).get("ValueInIA"),
+                    "size_archive_bytes": item.get("SizeInBytes", {}).get("ValueInArchive"),
+                    "availability_zone_name": item.get("AvailabilityZoneName"),
                     "performance_mode": item.get("PerformanceMode"),
                     "throughput_mode": item.get("ThroughputMode"),
+                    "provisioned_throughput_mibps": item.get("ProvisionedThroughputInMibps"),
                     "tags": tags,
                 },
             )
@@ -366,6 +396,9 @@ def _fsx(client, region, now):
         for item in page.get("FileSystems", []):
             resource_id = item["FileSystemId"]
             tags = _tags(item.get("Tags"))
+            configuration = (item.get("LustreConfiguration")
+                or item.get("WindowsConfiguration") or item.get("OntapConfiguration")
+                or item.get("OpenZFSConfiguration") or {})
             yield _base(
                 "storage.filesystem",
                 "fsx",
@@ -380,6 +413,9 @@ def _fsx(client, region, now):
                     "filesystem_type": item.get("FileSystemType"),
                     "storage_capacity_gib": item.get("StorageCapacity"),
                     "storage_type": item.get("StorageType"),
+                    "deployment_type": configuration.get("DeploymentType"),
+                    "throughput_capacity": configuration.get("ThroughputCapacity"),
+                    "per_unit_storage_throughput": configuration.get("PerUnitStorageThroughput"),
                     "tags": tags,
                 },
             )

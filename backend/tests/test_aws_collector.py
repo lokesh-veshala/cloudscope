@@ -7,6 +7,8 @@ from providers.aws.collector import (
     AwsAccountConfig,
     _ebs_volumes,
     _ec2_instances,
+    _efs,
+    _fsx,
     price_running_ec2,
     validate_connection,
 )
@@ -85,6 +87,27 @@ class CollectorTests(unittest.TestCase):
             "Iops":6000,"Throughput":250}]}]
         row = list(_ebs_volumes(Client(pages), "us-east-1", now))[0]
         self.assertEqual(row["metadata"], {"volume_type":"gp3","size_gib":100,"iops":6000,"throughput":250,"tags":{}})
+
+    def test_efs_keeps_storage_class_bytes(self):
+        now = datetime.now(timezone.utc)
+        pages = [{"FileSystems":[{"FileSystemId":"fs-example",
+            "LifeCycleState":"available", "SizeInBytes":{"Value":15,
+            "ValueInStandard":10,"ValueInIA":4,"ValueInArchive":1},
+            "ThroughputMode":"bursting"}]}]
+        row = list(_efs(Client(pages), "us-east-1", now))[0]
+        self.assertEqual(row["metadata"]["size_standard_bytes"], 10)
+        self.assertEqual(row["metadata"]["size_ia_bytes"], 4)
+        self.assertEqual(row["metadata"]["size_archive_bytes"], 1)
+
+    def test_fsx_keeps_deployment_and_throughput_dimensions(self):
+        now = datetime.now(timezone.utc)
+        pages = [{"FileSystems":[{"FileSystemId":"fsx-example", "Lifecycle":"AVAILABLE",
+            "FileSystemType":"LUSTRE", "StorageCapacity":1200, "StorageType":"SSD",
+            "LustreConfiguration":{"DeploymentType":"PERSISTENT_2",
+                "PerUnitStorageThroughput":250}}]}]
+        row = list(_fsx(Client(pages), "us-east-1", now))[0]
+        self.assertEqual(row["metadata"]["deployment_type"], "PERSISTENT_2")
+        self.assertEqual(row["metadata"]["per_unit_storage_throughput"], 250)
 
     @patch("providers.aws.collector.Ec2OnDemandCatalog.fetch_linux_shared")
     @patch("providers.aws.collector.session_for")

@@ -34,7 +34,7 @@ export function LiveOverview({account,revision}:{account:string;revision:number}
       <h3>Current UTC month — observed subtotal only</h3>
       <p>Two observations no more than ten minutes apart are required. These are polling estimates, not complete account spend.</p>
       {data.observed_costs.length === 0 && <p>No intervals recorded yet. Run two collections within ten minutes to begin.</p>}
-      <div className="table-wrap"><table><thead><tr><th>Basis</th><th>Intervals</th><th>USD subtotal</th></tr></thead><tbody>{data.observed_costs.map(row=><tr key={row.basis}><td>{row.basis}</td><td>{row.intervals}</td><td>{row.amount_usd ?? "Unavailable"}</td></tr>)}</tbody></table></div>
+      <div className="table-wrap"><table><thead><tr><th>Basis</th><th>Intervals</th><th>USD subtotal</th></tr></thead><tbody>{data.observed_costs.map(row=><tr key={row.basis}><td>{row.basis}</td><td>{row.intervals}</td><td>{row.amount_usd === null ? "Unavailable" : `$${Number(row.amount_usd).toFixed(6)}`}</td></tr>)}</tbody></table></div>
       <details><summary>Calculation exclusions</summary><ul>{data.limitations.map(item=><li key={item}>{item}</li>)}</ul></details>
       <h3>Monthly team limits</h3>
       <p>Limits are stored locally. Alarm decisions are withheld because account cost coverage is incomplete. No SNS or Lambda actions run.</p>

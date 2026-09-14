@@ -7,7 +7,7 @@ import { LiveOverview } from "./live-overview";
 type Resource = {
   id: string; name: string; provider_resource_id: string;
   provider_resource_type: string; region: string; state: string; last_seen: string;
-  metadata: { tags?: Record<string, string>; pricing?: {status?: string; usd_per_hour?: string; source?: string; fetched_at?: string} };
+  metadata: { tags?: Record<string, string>; pricing?: {status?: string; usd_per_hour?: string; monthly_usd?: string; source?: string; limitation?: string; fetched_at?: string} };
 };
 
 export function LiveInventory({accounts}: {accounts: {id: string; display_name: string}[]}) {
@@ -40,11 +40,12 @@ export function LiveInventory({accounts}: {accounts: {id: string; display_name: 
     <p role="status">{loading ? "Loading stored inventory…" : account ? `${rows.length} stored resources; ${filtered.length} match search.` : "Select an account to view live records."}</p>
     {error && <p role="alert">{error}</p>}
     {account && <LiveOverview key={account} account={account} revision={revision}/>}
-    {!loading && account && !error && <div className="table-wrap"><table><thead><tr><th>Resource</th><th>Service</th><th>Region</th><th>Observed state</th><th>Last observed (UTC)</th><th>USD/hour</th><th>Rate basis</th></tr></thead><tbody>
+    {!loading && account && !error && <div className="table-wrap"><table><thead><tr><th>Resource</th><th>Service</th><th>Region</th><th>Observed state</th><th>Last observed (UTC)</th><th>Matched rate</th><th>Rate basis</th></tr></thead><tbody>
       {filtered.map(row => {
         const price = row.metadata.pricing;
-        const supported = price?.status === "COMPLETE" || price?.status === "ESTIMATED";
-        return <tr key={row.id}><td>{row.name}<br/><small>{row.provider_resource_id}</small></td><td>{row.provider_resource_type}</td><td>{row.region}</td><td>{row.state}</td><td>{row.last_seen}</td><td>{supported ? price?.usd_per_hour : "Unavailable"}</td><td>{price?.status === "ESTIMATED" ? "Assumed 42% Spot discount; not alarm eligible" : price?.status === "COMPLETE" ? "Matched EC2 list rate; not total cost" : "Not priced"}</td></tr>;
+        const rate = price?.usd_per_hour ? `$${price.usd_per_hour}/hour` : price?.monthly_usd ? `$${Number(price.monthly_usd).toFixed(4)}/month` : "Unavailable";
+        const basis = price?.status === "ESTIMATED" ? "Assumed 42% Spot discount; not alarm eligible" : price?.source === "EBS_PROVISIONED" ? "Complete provisioned EBS dimensions" : price?.status === "PARTIAL" ? `${price.source}; ${price.limitation}` : price?.status === "COMPLETE" ? "Matched AWS list rate" : "Not priced";
+        return <tr key={row.id}><td>{row.name}<br/><small>{row.provider_resource_id}</small></td><td>{row.provider_resource_type}</td><td>{row.region}</td><td>{row.state}</td><td>{row.last_seen}</td><td>{rate}</td><td>{basis}</td></tr>;
       })}
     </tbody></table></div>}
   </article>;

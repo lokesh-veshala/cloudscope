@@ -19,6 +19,7 @@ from providers.aws.collector import (
     AwsAccountConfig,
     collect_resources,
     price_running_ec2,
+    price_storage_resources,
     validate_connection,
 )
 
@@ -230,12 +231,13 @@ def collect_account(account_id: UUID):
 
 def _collect_account(account_id: UUID, account):
     discovered, failures = collect_resources(_config(account))
-    prices = price_running_ec2(_config(account), discovered)
+    ec2_prices = price_running_ec2(_config(account), discovered)
+    storage_prices = price_storage_resources(_config(account), discovered)
     complete_prices = sum(
-        1 for item in prices.values() if item["status"] == "COMPLETE"
+        1 for item in ec2_prices.values() if item["status"] == "COMPLETE"
     )
     estimated_prices = sum(
-        1 for item in prices.values() if item["status"] == "ESTIMATED"
+        1 for item in ec2_prices.values() if item["status"] == "ESTIMATED"
     )
     with engine.begin() as connection:
         connection.execute(text("SELECT id FROM cloud_accounts WHERE id=:id FOR UPDATE"), {"id": account_id})
@@ -247,9 +249,11 @@ def _collect_account(account_id: UUID, account):
                 continue
             metadata = {
                 **item["metadata"],
-                "pricing": prices.get(
-                    item["provider_resource_id"], {"status": "NOT_APPLICABLE"}
-                ),
+                "pricing": (ec2_prices.get(item["provider_resource_id"])
+                    if item["provider_resource_type"] == "ec2"
+                    else storage_prices.get((item["provider_resource_type"],
+                                              item["provider_resource_id"])))
+                    or {"status": "NOT_APPLICABLE"},
             }
             resource_id = connection.execute(
                 text(
@@ -318,11 +322,29 @@ def _collect_account(account_id: UUID, account):
         "ec2_pricing": {
             "complete": complete_prices,
             "estimated_spot_fallback": estimated_prices,
-            "unresolved": len(prices) - complete_prices - estimated_prices,
+            "unresolved": len(ec2_prices) - complete_prices - estimated_prices,
         },
+        "storage_pricing": _storage_pricing_summary(discovered, storage_prices),
         "alerts_evaluated": False,
         "alerts_reason": "complete usage cost intervals do not exist yet",
     }
+
+
+def _storage_pricing_summary(discovered, prices):
+    result = {}
+    for service in ("ebs", "efs", "fsx"):
+        quotes = [prices.get((service, item["provider_resource_id"]), {})
+                  for item in discovered if item["provider_resource_type"] == service]
+        reasons = {}
+        for quote in quotes:
+            if quote.get("status") == "UNRESOLVED":
+                reason = quote.get("reason", "unknown")
+                reasons[reason] = reasons.get(reason, 0) + 1
+        result[service] = {
+            status.lower(): sum(1 for quote in quotes if quote.get("status") == status)
+            for status in ("COMPLETE", "PARTIAL", "UNRESOLVED")}
+        result[service]["unresolved_reasons"] = reasons
+    return result
 
 
 def _sync_state(connection, resource_id, state, observed_at):
@@ -458,6 +480,9 @@ def live_overview(account_id: UUID):
             "last_collected_at": account["last_collected_at"], "last_error": account["last_error"],
             "services": services, "observed_costs": costs, "limits": limits,
             "complete_account_cost_usd": None, "alerts_evaluated": False,
-            "limitations": ["Only supported EC2 compute intervals are priced", "Continuous running between polls is assumed",
-                "No usage before the first observation is reconstructed", "Stopped storage and other services are not included",
+            "limitations": ["Supported EC2 compute and provisioned EBS dimensions are priced",
+                "EFS and FSx values include matched storage dimensions only",
+                "Continuous provisioning between polls is assumed",
+                "No usage before the first observation is reconstructed",
+                "EFS/FSx throughput, access, backup and transfer dimensions remain excluded",
                 "Spot fallback assumes a 42% discount", "Limit alarms are withheld for incomplete costs"]}

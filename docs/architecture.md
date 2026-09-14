@@ -230,3 +230,8 @@ Inventory permissions should be read-only. SNS publication must be scoped to exp
 Server-side authorization must constrain account and dashboard queries before applying user filters. A role label in the current sidebar has no authorization effect. Shared-resource costs need a documented allocation policy; independent dashboard totals can overlap and must not be summed as an account bill.
 
 See [production readiness](production-readiness.md) for concrete release blockers.
+
+
+### Partial-observed team alert delivery
+
+The default alert path remains fail-closed: incomplete, stale, unsupported, or assumed cost evidence withholds publication. A team creator can explicitly enable partial-observed delivery for that team. This retains the approved SNS-topic check, two-collection confirmation, retry behavior, and threshold deduplication, but emits `calculation_coverage: PARTIAL_OBSERVED` in the SNS event so recipients can distinguish it from complete coverage.

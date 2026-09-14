@@ -80,7 +80,8 @@ class DashboardContractTests(unittest.TestCase):
                        '/resources?start_date=', 'case-sensitively', 'BLOCKED'):
             self.assertIn(marker, LIVE_TEAMS)
         for marker in ('Existing MTD baseline (USD)', 'baseline_amount_usd',
-                       'Declared baseline', 'FAIL CLOSED'):
+                       'Declared baseline', 'FAIL CLOSED', 'allow_partial_alerts',
+                       'Send alerts from partial observed cost'):
             self.assertIn(marker, LIVE_TEAMS)
         self.assertNotIn('status: "Normal"', LIVE_TEAMS)
 

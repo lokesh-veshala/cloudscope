@@ -125,9 +125,9 @@ is excluded from alarm evaluation. Other incomplete dimensions remain unresolved
   separately and are never rendered as zero cost.
 - Audited manual and automatic SNS delivery to the account's approved topic.
   SNS can invoke a subscribed customer Lambda. Automatic events are generated
-  only when cost evidence after the monitoring boundary is complete and fresh.
-  User-declared baselines cannot bypass partial, assumed Spot, unsupported, stale
-  or unresolved observations, which remain visibly blocked.
+  only when cost evidence after the monitoring boundary is complete and fresh, unless
+  that team explicitly enables partial-observed delivery. Those SNS events are marked
+  `PARTIAL_OBSERVED`; teams that do not opt in retain the strict fail-closed gate.
 
 The target system still requires complete multi-service usage ingestion,
 historical pricing persistence, server-side authorization, retention cleanup,

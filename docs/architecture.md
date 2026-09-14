@@ -148,6 +148,10 @@ backend evaluator also support nested groups for future UI composition. Team
 totals can overlap when filter definitions overlap and must not be summed as an
 account total.
 
+Team deletion is a local soft delete. It removes the definition from active
+queries while retaining its record for later audit and recovery work; it never
+calls an AWS resource mutation API.
+
 The domain policy carries dashboard ID, limit version, amount, threshold, period boundaries, maximum data age and required confirmation count.
 
 The evaluator checks numeric bounds, complete supplied pricing coverage, freshness, evaluation period and duplicate state. It compares cost / limit × 100 with the threshold. Two qualifying observations with strictly increasing observation times produce READY by default. Repeating the same snapshot does not advance confirmation.
@@ -155,6 +159,14 @@ The evaluator checks numeric bounds, complete supplied pricing coverage, freshne
 The deduplication key contains dashboard, period start, limit version and threshold. Limit changes therefore permit a new event. Defaults are a ten-minute maximum age and two confirmations.
 
 READY creates only an in-memory marker. It does not insert a database event, publish SNS, or invoke Lambda. Restarting loses the state. Concurrent evaluation is not protected.
+
+The live pilot exposes a separate manual notification test. It records a
+`PENDING` delivery, publishes `CLOUDSCOPE_NOTIFICATION_TEST` to the SNS topic
+registered for that account, and records `PUBLISHED` or `FAILED`. The payload
+contains a stable local event ID and explicitly states that it is not an
+automatic threshold alert. A subscribed Lambda is invoked by SNS; CloudScope
+does not request `lambda:InvokeFunction`. This test path is not evidence that
+cost inputs are eligible for automatic limit evaluation.
 
 ### Required durable delivery design
 

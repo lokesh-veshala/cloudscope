@@ -10,6 +10,7 @@ from providers.aws.collector import (
     _efs,
     _fsx,
     price_running_ec2,
+    publish_sns_test,
     validate_connection,
 )
 
@@ -33,6 +34,18 @@ class GenericClient:
     def describe_instances(self, **_): return {}
     def list_metrics(self, **_): return {}
     def get_resources(self, **_): return {}
+
+
+class SnsClient:
+    def __init__(self, response=None, error=None):
+        self.response = response or {"MessageId": "message-example"}
+        self.error = error
+        self.request = None
+    def publish(self, **kwargs):
+        self.request = kwargs
+        if self.error:
+            raise self.error
+        return self.response
 
 
 class Session:
@@ -109,6 +122,27 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(row["metadata"]["deployment_type"], "PERSISTENT_2")
         self.assertEqual(row["metadata"]["per_unit_storage_throughput"], 250)
         self.assertIsNone(row["metadata"]["drive_cache_type"])
+
+    @patch("providers.aws.collector.session_for")
+    def test_sns_test_is_explicit_and_contains_stable_event_id(self, session_for):
+        client = SnsClient()
+        session_for.return_value.client.return_value = client
+        result = publish_sns_test(AwsAccountConfig("123456789012", "us-east-1", "test"),
+            "arn:aws:sns:us-east-1:123456789012:cloudscope-test", "Test account",
+            datetime(2026, 9, 14, tzinfo=timezone.utc), "event-example")
+        self.assertTrue(result["published"])
+        self.assertIn('"is_test":true', client.request["Message"])
+        self.assertIn('"automatic_threshold_alert":false', client.request["Message"])
+        self.assertIn('"event_id":"event-example"', client.request["Message"])
+
+    @patch("providers.aws.collector.session_for")
+    def test_sns_failure_is_sanitized(self, session_for):
+        session_for.side_effect = RuntimeError("certificate secret detail")
+        result = publish_sns_test(AwsAccountConfig("123456789012", "us-east-1", "test"),
+            "arn:aws:sns:us-east-1:123456789012:cloudscope-test", "Test account",
+            datetime(2026, 9, 14, tzinfo=timezone.utc), "event-example")
+        self.assertFalse(result["published"])
+        self.assertNotIn("certificate secret detail", result["error"])
 
     @patch("providers.aws.collector.Ec2OnDemandCatalog.fetch_linux_shared")
     @patch("providers.aws.collector.session_for")

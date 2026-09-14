@@ -112,6 +112,14 @@ is excluded from alarm evaluation. Other incomplete dimensions remain unresolved
 - Live team creation with bounded AND/OR tag filters, server-side match previews,
   monthly limits, and exact resource drill-down. Historical observed costs use
   the tags stored on each interval rather than the resource's current tags.
+- Team deletion and per-resource observed interval history with clipped UTC
+  duration, pricing basis, calculation reason, unresolved count and subtotal.
+- Team consumption charts follow the selected UTC range, using hourly buckets
+  for up to two days and daily buckets otherwise. Unresolved periods are marked
+  separately and are never rendered as zero cost.
+- Audited manual SNS test delivery to the account's approved topic. SNS can
+  invoke a subscribed customer Lambda; automatic threshold delivery remains
+  disabled until complete-cost eligibility is satisfied.
 
 The target system still requires complete multi-service usage ingestion,
 historical pricing persistence, server-side authorization, retention cleanup,
@@ -125,7 +133,7 @@ From the repository root, using Python 3.13:
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend python3 -m unittest discover -s backend/tests -v
 ```
 
-The current suite contains 69 tests. No AWS account is required. Source-level UI
+The current suite contains 72 tests. No AWS account is required. Source-level UI
 checks are not browser tests.
 
 See the [developer guide](docs/developer-guide.md) for frontend and API setup.

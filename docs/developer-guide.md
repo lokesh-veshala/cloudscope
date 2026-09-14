@@ -105,7 +105,12 @@ curl --fail http://127.0.0.1:8000/api/v1/quality
 Account, resource, observed-cost and team routes are implemented for the local
 pilot. Team endpoints are under `/api/v1/accounts/{account_id}/teams`; preview
 accepts a validated filter expression and resource drill-down takes a stored
-team ID. SNS delivery remains disabled.
+team ID. Resource interval detail is clipped to the requested 1–90 day UTC
+range. The same resource response includes hourly or daily team cost buckets,
+including explicit unresolved and no-observation coverage states. Manual SNS
+test delivery is available at
+`POST /api/v1/accounts/{account_id}/notifications/test`; automatic threshold
+delivery remains disabled.
 
 ## 5. Isolated Compose development
 

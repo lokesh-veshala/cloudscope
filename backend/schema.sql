@@ -197,6 +197,7 @@ CREATE TABLE IF NOT EXISTS pilot_team_limits (
 );
 ALTER TABLE pilot_team_limits ADD COLUMN IF NOT EXISTS filter_expression jsonb;
 ALTER TABLE pilot_team_limits ADD COLUMN IF NOT EXISTS configuration_version integer NOT NULL DEFAULT 1;
+ALTER TABLE pilot_team_limits ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
 UPDATE pilot_team_limits
 SET filter_expression = jsonb_build_object(
   'kind', 'group', 'operator', 'AND', 'conditions', jsonb_build_array(
@@ -206,3 +207,17 @@ SET filter_expression = jsonb_build_object(
 WHERE filter_expression IS NULL;
 ALTER TABLE pilot_team_limits ALTER COLUMN filter_expression SET NOT NULL;
 CREATE INDEX IF NOT EXISTS pilot_team_limits_account_idx ON pilot_team_limits(cloud_account_id, created_at);
+CREATE INDEX IF NOT EXISTS pilot_team_limits_active_account_idx
+  ON pilot_team_limits(cloud_account_id, created_at) WHERE deleted_at IS NULL;
+CREATE TABLE IF NOT EXISTS notification_deliveries (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  cloud_account_id uuid NOT NULL REFERENCES cloud_accounts(id),
+  event_type text NOT NULL CHECK(event_type IN ('CLOUDSCOPE_NOTIFICATION_TEST')),
+  status text NOT NULL CHECK(status IN ('PENDING','PUBLISHED','FAILED')),
+  topic_arn text NOT NULL,
+  sns_message_id text,
+  error_message text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS notification_deliveries_account_idx
+  ON notification_deliveries(cloud_account_id, created_at DESC);

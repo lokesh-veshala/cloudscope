@@ -4,9 +4,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Callable, Iterable
+import json
 
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 from providers.aws.pricing_catalog import CatalogMatchError, Ec2OnDemandCatalog, StorageCatalog
 from providers.aws.storage_pricing import ebs_quote, efs_quote, fsx_quote
@@ -31,6 +33,40 @@ def session_for(config: AwsAccountConfig):
         profile_name=config.credential_profile,
         region_name=config.region,
     )
+
+
+def publish_sns_test(config: AwsAccountConfig, topic_arn: str,
+                     account_name: str, sent_at: datetime,
+                     event_id: str) -> dict[str, Any]:
+    """Publish a non-threshold test event to the account's approved SNS topic."""
+    try:
+        topic_region = topic_arn.split(":", 5)[3]
+        client = session_for(config).client(
+            "sns", region_name=topic_region, config=AWS_CONFIG)
+        payload = {
+            "event_type": "CLOUDSCOPE_NOTIFICATION_TEST",
+            "event_id": event_id,
+            "account_id": config.account_id,
+            "account_name": account_name,
+            "timestamp": sent_at.isoformat(),
+            "message": "CloudScope SNS-to-subscriber connectivity test",
+            "is_test": True,
+            "automatic_threshold_alert": False,
+        }
+        response = client.publish(
+            TopicArn=topic_arn,
+            Subject="CloudScope notification test",
+            Message=json.dumps(payload, separators=(",", ":"), sort_keys=True),
+            MessageAttributes={"event_type": {"DataType": "String",
+                                               "StringValue": payload["event_type"]}},
+        )
+        message_id = response.get("MessageId")
+        if not message_id:
+            return {"published": False, "error": "SNS did not return a message ID"}
+        return {"published": True, "message_id": message_id,
+                "event_type": payload["event_type"]}
+    except Exception as exc:
+        return {"published": False, "error": _safe_error(exc)}
 
 
 def validate_connection(config: AwsAccountConfig) -> dict[str, Any]:
@@ -485,4 +521,9 @@ def _s3(client, now):
 
 
 def _safe_error(exc: Exception) -> str:
-    return str(exc).replace("\n", " ")[:500]
+    if isinstance(exc, ClientError):
+        error = exc.response.get("Error", {})
+        code = str(error.get("Code") or "AWSServiceError")
+        message = str(error.get("Message") or "AWS request failed").replace("\n", " ")
+        return f"{code}: {message}"[:500]
+    return f"{type(exc).__name__}: request failed"

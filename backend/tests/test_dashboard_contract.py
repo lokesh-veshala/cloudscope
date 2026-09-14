@@ -66,6 +66,17 @@ class DashboardContractTests(unittest.TestCase):
     def test_live_teams_support_exact_and_or_filters_and_drilldown(self):
         self.assertIn('label:"Teams & limits"', LIVE_DASHBOARD)
         for marker in ('"AND"|"OR"', 'Preview matched resources', '/teams/preview',
-                       '/resources`', 'case-sensitively', 'WITHHELD'):
+                       '/resources?start_date=', 'case-sensitively', 'WITHHELD'):
             self.assertIn(marker, LIVE_TEAMS)
         self.assertNotIn('status: "Normal"', LIVE_TEAMS)
+
+    def test_live_team_deletion_cost_history_and_sns_test_are_wired(self):
+        for marker in ('method:"DELETE"', 'window.confirm', 'View history',
+                       'duration_seconds', 'effective_hourly_usd',
+                       'Not complete lifetime or invoice history',
+                       'TeamConsumptionChart', 'unavailable is not zero',
+                       'onPointerEnter', 'onFocus', 'onKeyDown'):
+            self.assertIn(marker, LIVE_TEAMS)
+        self.assertIn('Test SNS publish', MANAGEMENT)
+        self.assertIn('/notifications/test', MANAGEMENT)
+        self.assertIn('Publishes one test event', MANAGEMENT)

@@ -9,7 +9,7 @@ from uuid import UUID
 from decimal import Decimal
 from observed_costs import estimate_observed_interval
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
@@ -20,6 +20,7 @@ from providers.aws.collector import (
     collect_resources,
     price_running_ec2,
     price_storage_resources,
+    publish_sns_test,
     validate_connection,
 )
 
@@ -44,7 +45,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="CloudScope API", version="1.4.0", lifespan=lifespan)
+app = FastAPI(title="CloudScope API", version="1.5.0", lifespan=lifespan)
 allowed_origins = [
     origin.strip()
     for origin in os.environ.get(
@@ -56,7 +57,7 @@ allowed_origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Content-Type"],
 )
 
@@ -206,6 +207,48 @@ def test_account_connection(account_id: UUID):
             {"status": status, "error": error, "id": account_id},
         )
     return {**result, "status": status}
+
+
+@app.post("/api/v1/accounts/{account_id}/notifications/test")
+def test_account_notification(account_id: UUID):
+    account = _account(account_id)
+    if account["connection_status"] != "CONNECTED":
+        raise HTTPException(409, "run a successful connection test before publishing")
+    topic = account["sns_topic_arn"]
+    parts = topic.split(":", 5) if topic else []
+    if (len(parts) != 6 or parts[0] != "arn" or parts[2] != "sns"
+            or parts[4] != account["provider_account_id"] or not parts[3]
+            or not parts[5]):
+        raise HTTPException(409, "this account has no valid approved SNS topic")
+    sent_at = datetime.now(timezone.utc)
+    with engine.begin() as connection:
+        delivery_id = connection.execute(text("""INSERT INTO notification_deliveries
+            (cloud_account_id,event_type,status,topic_arn)
+            VALUES (:account,'CLOUDSCOPE_NOTIFICATION_TEST','PENDING',:topic)
+            RETURNING id"""), {"account": account_id, "topic": topic}).scalar_one()
+    result = publish_sns_test(_config(account), topic, account["display_name"],
+                              sent_at, str(delivery_id))
+    status = "PUBLISHED" if result["published"] else "FAILED"
+    with engine.begin() as connection:
+        connection.execute(text("""UPDATE notification_deliveries
+            SET status=:status, sns_message_id=:message, error_message=:error
+            WHERE id=:id"""), {"status": status, "message": result.get("message_id"),
+                                "error": result.get("error"), "id": delivery_id})
+    if not result["published"]:
+        raise HTTPException(502, result["error"])
+    return {**result, "delivery_id": delivery_id, "is_test": True,
+            "automatic_threshold_alerts_enabled": False,
+            "subscriber_note": "SNS invokes subscribed Lambda functions; CloudScope does not invoke Lambda directly"}
+
+
+@app.get("/api/v1/accounts/{account_id}/notifications")
+def account_notifications(account_id: UUID):
+    _account(account_id)
+    with engine.connect() as connection:
+        return rows(connection.execute(text("""SELECT id, event_type, status,
+            sns_message_id, error_message, created_at
+            FROM notification_deliveries WHERE cloud_account_id=:account
+            ORDER BY created_at DESC LIMIT 50"""), {"account": account_id}))
 
 
 @app.post("/api/v1/accounts/{account_id}/collect")
@@ -570,7 +613,7 @@ def preview_team(account_id: UUID, payload: TeamPreview):
 
 def _team(account_id, team_id, connection):
     team = connection.execute(text("""SELECT * FROM pilot_team_limits
-        WHERE id=:team AND cloud_account_id=:account"""),
+        WHERE id=:team AND cloud_account_id=:account AND deleted_at IS NULL"""),
         {"team": team_id, "account": account_id}).mappings().first()
     if not team:
         raise HTTPException(404, "team not found")
@@ -585,7 +628,8 @@ def list_teams(account_id: UUID, start_date: date | None = None,
     subtotal = "SUM(c.amount_usd * EXTRACT(EPOCH FROM (LEAST(c.usage_end,:end)-GREATEST(c.usage_start,:start))) / EXTRACT(EPOCH FROM (c.usage_end-c.usage_start)))"
     with engine.connect() as connection:
         teams = rows(connection.execute(text("""SELECT * FROM pilot_team_limits
-            WHERE cloud_account_id=:id ORDER BY created_at"""), {"id": account_id}))
+            WHERE cloud_account_id=:id AND deleted_at IS NULL
+            ORDER BY created_at"""), {"id": account_id}))
         for team in teams:
             expression = _stored_expression(team)
             token = str(team["id"]).replace("-", "")
@@ -615,20 +659,170 @@ def list_teams(account_id: UUID, start_date: date | None = None,
 
 
 @app.get("/api/v1/accounts/{account_id}/teams/{team_id}/resources")
-def team_resources(account_id: UUID, team_id: UUID):
+def team_resources(account_id: UUID, team_id: UUID,
+                   start_date: date | None = None, end_date: date | None = None):
     _account(account_id)
+    start, end = _reporting_window(start_date, end_date, datetime.now(timezone.utc))
     with engine.connect() as connection:
         team = _team(account_id, team_id, connection)
+        expression = _stored_expression(team)
         predicate, filter_args = _compile_filter(
-            _stored_expression(team), "COALESCE(metadata->'tags','{}'::jsonb)", "resource")
-        matches = rows(connection.execute(text(f"""SELECT id, name,
-            provider_resource_id, provider_resource_type, region, availability_zone,
-            state, last_seen, metadata FROM resources
-            WHERE cloud_account_id=:account AND deleted_at IS NULL AND {predicate}
-            ORDER BY provider_resource_type, name"""),
-            {"account": account_id, **filter_args}))
+            expression, "COALESCE(r.metadata->'tags','{}'::jsonb)", "resource")
+        historic, historic_args = _compile_filter(expression, "c.tags", "history")
+        membership, membership_args = _compile_filter(
+            expression, "hc.tags", "membership_history")
+        matches = rows(connection.execute(text(f"""SELECT r.id, r.name,
+            r.provider_resource_id, r.provider_resource_type, r.region,
+            r.availability_zone, r.state, r.last_seen, r.metadata,
+            ({predicate}) AND r.deleted_at IS NULL AS current_member,
+            count(c.resource_id) AS intervals,
+            count(c.resource_id) FILTER (WHERE c.amount_usd IS NULL) AS unresolved_intervals,
+            COALESCE(SUM(EXTRACT(EPOCH FROM (LEAST(c.usage_end,:end)-GREATEST(c.usage_start,:start)))
+                ) FILTER (WHERE c.amount_usd IS NOT NULL),0) AS priced_seconds,
+            SUM(c.amount_usd * EXTRACT(EPOCH FROM (LEAST(c.usage_end,:end)-GREATEST(c.usage_start,:start))) /
+                EXTRACT(EPOCH FROM (c.usage_end-c.usage_start))) AS observed_subtotal_usd
+            FROM resources r LEFT JOIN observed_costs c ON c.resource_id=r.id
+              AND c.usage_end>:start AND c.usage_start<:end AND {historic}
+            WHERE r.cloud_account_id=:account AND (
+              (r.deleted_at IS NULL AND {predicate}) OR EXISTS (
+                SELECT 1 FROM observed_costs hc WHERE hc.resource_id=r.id
+                  AND hc.usage_end>:start AND hc.usage_start<:end AND {membership}
+              )
+            )
+            GROUP BY r.id, r.name, r.provider_resource_id, r.provider_resource_type,
+              r.region, r.availability_zone, r.state, r.last_seen, r.metadata,
+              r.deleted_at
+            ORDER BY r.provider_resource_type, r.name"""),
+            {"account": account_id, "start": start, "end": end,
+             **filter_args, **historic_args, **membership_args}))
+        for item in matches:
+            item["priced_seconds"] = str(item["priced_seconds"])
+            value = item["observed_subtotal_usd"]
+            item["observed_subtotal_usd"] = str(value) if value is not None else None
+        bucket = "hour" if end - start <= timedelta(days=2) else "day"
+        step = f"1 {bucket}"
+        trend = rows(connection.execute(text(f"""WITH buckets AS (
+            SELECT bucket_start,
+              LEAST(bucket_start + interval '{step}', :end) AS bucket_end
+            FROM generate_series(date_trunc('{bucket}', :start),
+              :end - interval '1 microsecond', interval '{step}') AS series(bucket_start)
+          ), matching AS (
+            SELECT c.* FROM observed_costs c
+            JOIN resources r ON r.id=c.resource_id
+            WHERE r.cloud_account_id=:account AND c.usage_end>:start
+              AND c.usage_start<:end AND {historic}
+          )
+          SELECT b.bucket_start,
+            SUM(m.amount_usd * EXTRACT(EPOCH FROM (
+              LEAST(m.usage_end,b.bucket_end)-GREATEST(m.usage_start,b.bucket_start))) /
+              EXTRACT(EPOCH FROM (m.usage_end-m.usage_start)))
+              FILTER (WHERE m.amount_usd IS NOT NULL) AS amount_usd,
+            count(m.id) FILTER (WHERE m.amount_usd IS NOT NULL) AS priced_intervals,
+            count(m.id) FILTER (WHERE m.amount_usd IS NULL) AS unresolved_intervals
+          FROM buckets b LEFT JOIN matching m ON m.usage_end>b.bucket_start
+            AND m.usage_start<b.bucket_end
+          GROUP BY b.bucket_start ORDER BY b.bucket_start"""),
+            {"account": account_id, "start": start, "end": end,
+             **historic_args}))
+        for item in trend:
+            value = item["amount_usd"]
+            item["amount_usd"] = str(value) if value is not None else None
+            if item["priced_intervals"] and item["unresolved_intervals"]:
+                item["coverage_status"] = "PARTIAL"
+            elif item["priced_intervals"]:
+                item["coverage_status"] = "PRICED"
+            elif item["unresolved_intervals"]:
+                item["coverage_status"] = "UNRESOLVED"
+            else:
+                item["coverage_status"] = "NO_OBSERVATION"
     return {"team_id": team_id, "team_name": team["name"],
-            "filter_expression": _stored_expression(team), "resources": matches}
+            "filter_expression": expression, "period_start": start,
+            "period_end": end, "trend_bucket": bucket,
+            "cost_trend": trend, "resources": matches}
+
+
+@app.get("/api/v1/accounts/{account_id}/teams/{team_id}/resources/{resource_id}/cost-intervals")
+def team_resource_cost_intervals(account_id: UUID, team_id: UUID, resource_id: UUID,
+                                 start_date: date | None = None,
+                                 end_date: date | None = None,
+                                 limit: int = Query(default=200, ge=1, le=500)):
+    _account(account_id)
+    start, end = _reporting_window(start_date, end_date, datetime.now(timezone.utc))
+    with engine.connect() as connection:
+        team = _team(account_id, team_id, connection)
+        expression = _stored_expression(team)
+        current, current_args = _compile_filter(
+            expression, "COALESCE(r.metadata->'tags','{}'::jsonb)", "detail_current")
+        membership, membership_args = _compile_filter(
+            expression, "hc.tags", "detail_membership")
+        resource = connection.execute(text(f"""SELECT r.id, r.name,
+            r.provider_resource_id, r.provider_resource_type, r.region, r.state,
+            (({current}) AND r.deleted_at IS NULL) AS current_member,
+            EXISTS (SELECT 1 FROM observed_costs hc WHERE hc.resource_id=r.id
+              AND hc.usage_end>:start AND hc.usage_start<:end AND {membership})
+              AS historical_member
+            FROM resources r WHERE r.id=:resource AND r.cloud_account_id=:account
+              AND ((r.deleted_at IS NULL AND {current}) OR EXISTS (
+                SELECT 1 FROM observed_costs hc WHERE hc.resource_id=r.id
+                  AND hc.usage_end>:start AND hc.usage_start<:end AND {membership}
+              ))"""),
+            {"resource": resource_id, "account": account_id,
+             "start": start, "end": end, **current_args,
+             **membership_args}).mappings().first()
+        if not resource:
+            raise HTTPException(404, "resource is not a member of this team in the selected period")
+        historic, historic_args = _compile_filter(expression, "c.tags", "detail_history")
+        args = {"resource": resource_id, "start": start, "end": end,
+                "limit": limit, **historic_args}
+        summary = dict(connection.execute(text(f"""SELECT count(*) AS intervals,
+            count(*) FILTER (WHERE c.amount_usd IS NOT NULL) AS priced_intervals,
+            count(*) FILTER (WHERE c.amount_usd IS NULL) AS unresolved_intervals,
+            COALESCE(SUM(EXTRACT(EPOCH FROM (LEAST(c.usage_end,:end)-GREATEST(c.usage_start,:start)))
+                ) FILTER (WHERE c.amount_usd IS NOT NULL),0) AS priced_seconds,
+            SUM(c.amount_usd * EXTRACT(EPOCH FROM (LEAST(c.usage_end,:end)-GREATEST(c.usage_start,:start))) /
+                EXTRACT(EPOCH FROM (c.usage_end-c.usage_start))) AS observed_subtotal_usd
+            FROM observed_costs c WHERE c.resource_id=:resource
+              AND c.usage_end>:start AND c.usage_start<:end AND {historic}"""), args).mappings().one())
+        intervals = rows(connection.execute(text(f"""SELECT
+            GREATEST(c.usage_start,:start) AS usage_start,
+            LEAST(c.usage_end,:end) AS usage_end,
+            EXTRACT(EPOCH FROM (LEAST(c.usage_end,:end)-GREATEST(c.usage_start,:start))) AS duration_seconds,
+            CASE WHEN c.amount_usd IS NULL THEN NULL ELSE
+              c.amount_usd * EXTRACT(EPOCH FROM (LEAST(c.usage_end,:end)-GREATEST(c.usage_start,:start))) /
+              EXTRACT(EPOCH FROM (c.usage_end-c.usage_start)) END AS amount_usd,
+            CASE WHEN c.amount_usd IS NULL THEN NULL ELSE
+              c.amount_usd * 3600 / EXTRACT(EPOCH FROM (c.usage_end-c.usage_start))
+              END AS effective_hourly_usd,
+            c.basis, c.reason, c.tags
+            FROM observed_costs c WHERE c.resource_id=:resource
+              AND c.usage_end>:start AND c.usage_start<:end AND {historic}
+            ORDER BY c.usage_start DESC LIMIT :limit"""), args))
+    summary["priced_seconds"] = str(summary["priced_seconds"])
+    value = summary["observed_subtotal_usd"]
+    summary["observed_subtotal_usd"] = str(value) if value is not None else None
+    for interval in intervals:
+        interval["duration_seconds"] = str(interval["duration_seconds"])
+        value = interval["amount_usd"]
+        interval["amount_usd"] = str(value) if value is not None else None
+        value = interval["effective_hourly_usd"]
+        interval["effective_hourly_usd"] = str(value) if value is not None else None
+    return {"team_id": team_id, "team_name": team["name"],
+            "resource": dict(resource), "period_start": start, "period_end": end,
+            "summary": summary, "intervals": intervals, "returned_limit": limit,
+            "cost_status": "PARTIAL_OBSERVED_ONLY"}
+
+
+@app.delete("/api/v1/accounts/{account_id}/teams/{team_id}", status_code=204)
+def delete_team(account_id: UUID, team_id: UUID):
+    _account(account_id)
+    with engine.begin() as connection:
+        result = connection.execute(text("""UPDATE pilot_team_limits
+            SET deleted_at=now() WHERE id=:team AND cloud_account_id=:account
+              AND deleted_at IS NULL"""),
+            {"team": team_id, "account": account_id})
+        if result.rowcount != 1:
+            raise HTTPException(404, "team not found")
+    return Response(status_code=204)
 
 
 def _reporting_window(start_date: date | None, end_date: date | None,
@@ -710,7 +904,7 @@ def live_overview(account_id: UUID, start_date: date | None = None,
         inventory = dict(connection.execute(text("""SELECT count(*) AS resources,
             count(*) FILTER (WHERE COALESCE(metadata->'tags','{}'::jsonb) = '{}'::jsonb) AS untagged_resources
             FROM resources WHERE cloud_account_id=:id AND deleted_at IS NULL"""), {"id": account_id}).mappings().one())
-        limits = rows(connection.execute(text("SELECT * FROM pilot_team_limits WHERE cloud_account_id=:id ORDER BY created_at"), {"id": account_id}))
+        limits = rows(connection.execute(text("SELECT * FROM pilot_team_limits WHERE cloud_account_id=:id AND deleted_at IS NULL ORDER BY created_at"), {"id": account_id}))
         for limit in limits:
             expression = _stored_expression(limit)
             condition, condition_args = _compile_filter(

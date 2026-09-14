@@ -109,6 +109,9 @@ is excluded from alarm evaluation. Other incomplete dimensions remain unresolved
 - Strict EBS, EFS and FSx storage catalog adapters with explicit partial/unresolved outcomes.
 - In-memory threshold evaluator.
 - PostgreSQL state/tag history persistence and a local four-service Compose stack.
+- Live team creation with bounded AND/OR tag filters, server-side match previews,
+  monthly limits, and exact resource drill-down. Historical observed costs use
+  the tags stored on each interval rather than the resource's current tags.
 
 The target system still requires complete multi-service usage ingestion,
 historical pricing persistence, server-side authorization, retention cleanup,
@@ -122,7 +125,7 @@ From the repository root, using Python 3.13:
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend python3 -m unittest discover -s backend/tests -v
 ```
 
-The current suite contains 64 tests. No AWS account is required. Source-level UI
+The current suite contains 69 tests. No AWS account is required. Source-level UI
 checks are not browser tests.
 
 See the [developer guide](docs/developer-guide.md) for frontend and API setup.

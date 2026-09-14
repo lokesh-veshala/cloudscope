@@ -4,7 +4,9 @@ from datetime import date, datetime, timezone
 from pydantic import ValidationError
 from fastapi import HTTPException
 
-from api import CollectionScheduleUpdate, _reporting_window, _storage_pricing_summary
+from api import (CollectionScheduleUpdate, PilotLimitCreate, _compile_filter,
+                 _reporting_window, _storage_pricing_summary,
+                 _validate_filter_expression)
 
 
 class ApiModelTests(unittest.TestCase):
@@ -38,6 +40,45 @@ class ApiModelTests(unittest.TestCase):
                            (date(2026, 1, 1), date(2026, 9, 1))):
             with self.assertRaises(HTTPException):
                 _reporting_window(start, end, now)
+
+    def test_team_filter_normalizes_nested_and_or_groups(self):
+        value = _validate_filter_expression({"kind": "group", "operator": "AND", "conditions": [
+            {"kind": "tag", "key": " Team ", "operator": "EQUALS", "value": " HPC "},
+            {"kind": "group", "operator": "OR", "conditions": [
+                {"kind": "tag", "key": "Environment", "operator": "EQUALS", "value": "prod"},
+                {"kind": "tag", "key": "CostCenter", "operator": "EXISTS"},
+            ]},
+        ]})
+        self.assertEqual(value["conditions"][0]["key"], "Team")
+        self.assertEqual(value["conditions"][1]["operator"], "OR")
+
+    def test_team_filter_rejects_empty_values_and_excessive_rules(self):
+        with self.assertRaises(ValueError):
+            _validate_filter_expression({"kind": "tag", "key": "Team", "operator": "EQUALS", "value": ""})
+        with self.assertRaises(ValueError):
+            _validate_filter_expression({"kind": "group", "operator": "OR", "conditions": [
+                {"kind": "tag", "key": f"key-{index}", "operator": "EXISTS"}
+                for index in range(21)
+            ]})
+
+    def test_team_filter_sql_uses_bound_parameters(self):
+        expression = _validate_filter_expression({"kind": "group", "operator": "AND", "conditions": [
+            {"kind": "tag", "key": "Team'; DROP TABLE resources; --", "operator": "EQUALS", "value": "HPC"},
+            {"kind": "tag", "key": "Environment", "operator": "NOT_EQUALS", "value": "dev"},
+        ]})
+        sql, arguments = _compile_filter(expression, "c.tags", "test")
+        self.assertNotIn("DROP TABLE", sql)
+        self.assertIn(":test_key_0", sql)
+        self.assertEqual(arguments["test_key_0"], "Team'; DROP TABLE resources; --")
+        self.assertIn("c.tags ? :test_key_1", sql)
+
+    def test_team_model_rejects_unbounded_or_invalid_filter(self):
+        for name, expression in (
+            ("HPC", {"kind": "group", "operator": "XOR", "conditions": []}),
+            ("   ", {"kind": "tag", "key": "Team", "operator": "EXISTS"}),
+        ):
+            with self.assertRaises(ValidationError):
+                PilotLimitCreate(name=name, amount_usd="100", filter_expression=expression)
 
 
 if __name__ == "__main__":

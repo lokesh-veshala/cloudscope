@@ -11,7 +11,7 @@ from observed_costs import estimate_observed_interval
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 
 from database import engine, initialize_database, ping_database, rows
@@ -44,7 +44,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="CloudScope API", version="1.3.0", lifespan=lifespan)
+app = FastAPI(title="CloudScope API", version="1.4.0", lifespan=lifespan)
 allowed_origins = [
     origin.strip()
     for origin in os.environ.get(
@@ -436,21 +436,199 @@ def quality():
 
 class PilotLimitCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    tag_key: str = Field(min_length=1, max_length=128)
-    tag_value: str = Field(min_length=1, max_length=256)
     amount_usd: Decimal = Field(gt=0, max_digits=20, decimal_places=6, allow_inf_nan=False)
+    filter_expression: dict
+
+    @field_validator("name")
+    @classmethod
+    def valid_name(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("team name cannot be blank")
+        return value
+
+    @field_validator("filter_expression")
+    @classmethod
+    def valid_filter_expression(cls, value):
+        return _validate_filter_expression(value)
 
 
-@app.post("/api/v1/accounts/{account_id}/limits", status_code=201)
+def _validate_filter_expression(expression, depth=0, counter=None):
+    """Validate and normalize the bounded tag-filter language accepted by the API."""
+    if counter is None:
+        counter = [0]
+    if not isinstance(expression, dict) or depth > 4:
+        raise ValueError("filter expression must be an object with at most 4 nested levels")
+    kind = expression.get("kind")
+    if kind == "tag":
+        counter[0] += 1
+        if counter[0] > 20:
+            raise ValueError("filter expression cannot contain more than 20 tag conditions")
+        key = expression.get("key")
+        operator = expression.get("operator")
+        if not isinstance(key, str) or not key.strip() or len(key.strip()) > 128:
+            raise ValueError("each tag condition requires a tag key of 1 to 128 characters")
+        if operator not in {"EQUALS", "NOT_EQUALS", "EXISTS", "NOT_EXISTS"}:
+            raise ValueError("unsupported tag comparison operator")
+        normalized = {"kind": "tag", "key": key.strip(), "operator": operator}
+        if operator in {"EQUALS", "NOT_EQUALS"}:
+            value = expression.get("value")
+            if not isinstance(value, str) or not value.strip() or len(value.strip()) > 256:
+                raise ValueError("equals comparisons require a tag value of 1 to 256 characters")
+            normalized["value"] = value.strip()
+        return normalized
+    if kind != "group" or expression.get("operator") not in {"AND", "OR"}:
+        raise ValueError("filter groups require an AND or OR operator")
+    conditions = expression.get("conditions")
+    if not isinstance(conditions, list) or not conditions or len(conditions) > 20:
+        raise ValueError("filter groups require 1 to 20 conditions")
+    return {"kind": "group", "operator": expression["operator"],
+            "conditions": [_validate_filter_expression(item, depth + 1, counter)
+                           for item in conditions]}
+
+
+def _compile_filter(expression, json_expression, prefix="filter"):
+    """Compile a validated filter using only fixed SQL and bound user values."""
+    arguments = {}
+    sequence = [0]
+
+    def compile_node(node):
+        if node["kind"] == "group":
+            parts = [compile_node(child) for child in node["conditions"]]
+            return "(" + f' {node["operator"]} '.join(parts) + ")"
+        index = sequence[0]
+        sequence[0] += 1
+        key_name = f"{prefix}_key_{index}"
+        arguments[key_name] = node["key"]
+        operator = node["operator"]
+        if operator == "EXISTS":
+            return f"({json_expression} ? :{key_name})"
+        if operator == "NOT_EXISTS":
+            return f"(NOT ({json_expression} ? :{key_name}))"
+        value_name = f"{prefix}_value_{index}"
+        arguments[value_name] = node["value"]
+        if operator == "EQUALS":
+            return f"(({json_expression} ->> :{key_name}) = :{value_name})"
+        return (f"(({json_expression} ? :{key_name}) AND "
+                f"({json_expression} ->> :{key_name}) <> :{value_name})")
+
+    return compile_node(expression), arguments
+
+
+def _stored_expression(limit):
+    expression = limit.get("filter_expression")
+    if isinstance(expression, str):
+        expression = json.loads(expression)
+    if expression:
+        return _validate_filter_expression(expression)
+    return _validate_filter_expression({"kind": "group", "operator": "AND",
+        "conditions": [{"kind": "tag", "key": limit["tag_key"],
+                        "operator": "EQUALS", "value": limit["tag_value"]}]})
+
+
+@app.post("/api/v1/accounts/{account_id}/teams", status_code=201)
+@app.post("/api/v1/accounts/{account_id}/limits", status_code=201, include_in_schema=False)
 def create_pilot_limit(account_id: UUID, payload: PilotLimitCreate):
     _account(account_id)
     with engine.begin() as connection:
         result = connection.execute(text("""INSERT INTO pilot_team_limits
-            (cloud_account_id,name,tag_key,tag_value,amount_usd)
-            VALUES (:account,:name,:tag_key,:tag_value,:amount) RETURNING id"""),
-            {"account": account_id, "name": payload.name, "tag_key": payload.tag_key,
-             "tag_value": payload.tag_value, "amount": payload.amount_usd}).scalar_one()
-    return {"id": result, "notification_enabled": False}
+            (cloud_account_id,name,tag_key,tag_value,amount_usd,filter_expression)
+            VALUES (:account,:name,'','',:amount,CAST(:filter AS jsonb)) RETURNING id"""),
+            {"account": account_id, "name": payload.name,
+             "amount": payload.amount_usd,
+             "filter": json.dumps(payload.filter_expression)}).scalar_one()
+    return {"id": result, "notification_enabled": False,
+            "evaluation_status": "WITHHELD_INCOMPLETE_COST_COVERAGE"}
+
+
+class TeamPreview(BaseModel):
+    filter_expression: dict
+
+    @field_validator("filter_expression")
+    @classmethod
+    def valid_filter_expression(cls, value):
+        return _validate_filter_expression(value)
+
+
+@app.post("/api/v1/accounts/{account_id}/teams/preview")
+def preview_team(account_id: UUID, payload: TeamPreview):
+    _account(account_id)
+    predicate, filter_args = _compile_filter(
+        payload.filter_expression, "COALESCE(metadata->'tags','{}'::jsonb)", "preview")
+    with engine.connect() as connection:
+        count = connection.execute(text(f"""SELECT count(*) FROM resources
+            WHERE cloud_account_id=:id AND deleted_at IS NULL AND {predicate}"""),
+            {"id": account_id, **filter_args}).scalar_one()
+        matches = rows(connection.execute(text(f"""SELECT id, name,
+            provider_resource_id, provider_resource_type, region, state,
+            metadata #>> '{{pricing,status}}' AS pricing_status
+            FROM resources WHERE cloud_account_id=:id AND deleted_at IS NULL
+            AND {predicate} ORDER BY provider_resource_type, name LIMIT 25"""),
+            {"id": account_id, **filter_args}))
+    return {"matching_resources": count, "sample": matches, "sample_limit": 25}
+
+
+def _team(account_id, team_id, connection):
+    team = connection.execute(text("""SELECT * FROM pilot_team_limits
+        WHERE id=:team AND cloud_account_id=:account"""),
+        {"team": team_id, "account": account_id}).mappings().first()
+    if not team:
+        raise HTTPException(404, "team not found")
+    return dict(team)
+
+
+@app.get("/api/v1/accounts/{account_id}/teams")
+def list_teams(account_id: UUID, start_date: date | None = None,
+               end_date: date | None = None):
+    _account(account_id)
+    start, end = _reporting_window(start_date, end_date, datetime.now(timezone.utc))
+    subtotal = "SUM(c.amount_usd * EXTRACT(EPOCH FROM (LEAST(c.usage_end,:end)-GREATEST(c.usage_start,:start))) / EXTRACT(EPOCH FROM (c.usage_end-c.usage_start)))"
+    with engine.connect() as connection:
+        teams = rows(connection.execute(text("""SELECT * FROM pilot_team_limits
+            WHERE cloud_account_id=:id ORDER BY created_at"""), {"id": account_id}))
+        for team in teams:
+            expression = _stored_expression(team)
+            token = str(team["id"]).replace("-", "")
+            current_sql, current_args = _compile_filter(
+                expression, "COALESCE(r.metadata->'tags','{}'::jsonb)", f"current_{token}")
+            cost_sql, cost_args = _compile_filter(expression, "c.tags", f"cost_{token}")
+            inventory = connection.execute(text(f"""SELECT count(*) AS resource_count,
+                count(*) FILTER (WHERE r.metadata #>> '{{pricing,status}}' IN ('COMPLETE','PARTIAL','ESTIMATED')) AS resources_with_rates
+                FROM resources r WHERE r.cloud_account_id=:id AND r.deleted_at IS NULL
+                AND {current_sql}"""), {"id": account_id, **current_args}).mappings().one()
+            costs = connection.execute(text(f"""SELECT count(*) AS intervals,
+                count(*) FILTER (WHERE c.amount_usd IS NOT NULL) AS priced_intervals,
+                count(*) FILTER (WHERE c.amount_usd IS NULL) AS unresolved_intervals,
+                {subtotal} AS observed_subtotal_usd
+                FROM observed_costs c JOIN resources r ON r.id=c.resource_id
+                WHERE r.cloud_account_id=:id AND c.usage_end>:start AND c.usage_start<:end
+                AND {cost_sql}"""), {"id": account_id, "start": start, "end": end,
+                                      **cost_args}).mappings().one()
+            team["filter_expression"] = expression
+            team.update(dict(inventory)); team.update(dict(costs))
+            team["amount_usd"] = str(team["amount_usd"])
+            value = team["observed_subtotal_usd"]
+            team["observed_subtotal_usd"] = str(value) if value is not None else None
+            team["evaluation_status"] = "WITHHELD_INCOMPLETE_COST_COVERAGE"
+    return {"period_start": start, "period_end": end, "teams": teams,
+            "alerts_evaluated": False}
+
+
+@app.get("/api/v1/accounts/{account_id}/teams/{team_id}/resources")
+def team_resources(account_id: UUID, team_id: UUID):
+    _account(account_id)
+    with engine.connect() as connection:
+        team = _team(account_id, team_id, connection)
+        predicate, filter_args = _compile_filter(
+            _stored_expression(team), "COALESCE(metadata->'tags','{}'::jsonb)", "resource")
+        matches = rows(connection.execute(text(f"""SELECT id, name,
+            provider_resource_id, provider_resource_type, region, availability_zone,
+            state, last_seen, metadata FROM resources
+            WHERE cloud_account_id=:account AND deleted_at IS NULL AND {predicate}
+            ORDER BY provider_resource_type, name"""),
+            {"account": account_id, **filter_args}))
+    return {"team_id": team_id, "team_name": team["name"],
+            "filter_expression": _stored_expression(team), "resources": matches}
 
 
 def _reporting_window(start_date: date | None, end_date: date | None,
@@ -534,8 +712,12 @@ def live_overview(account_id: UUID, start_date: date | None = None,
             FROM resources WHERE cloud_account_id=:id AND deleted_at IS NULL"""), {"id": account_id}).mappings().one())
         limits = rows(connection.execute(text("SELECT * FROM pilot_team_limits WHERE cloud_account_id=:id ORDER BY created_at"), {"id": account_id}))
         for limit in limits:
-            amount = connection.execute(text(f"SELECT {subtotal} {scope} AND (c.tags ->> :key) = :value"),
-                {**args, "key": limit["tag_key"], "value": limit["tag_value"]}).scalar_one()
+            expression = _stored_expression(limit)
+            condition, condition_args = _compile_filter(
+                expression, "c.tags", f"overview_{str(limit['id']).replace('-', '')}")
+            amount = connection.execute(text(f"SELECT {subtotal} {scope} AND {condition}"),
+                {**args, **condition_args}).scalar_one()
+            limit["filter_expression"] = expression
             limit["observed_subtotal_usd"] = str(amount) if amount is not None else None
             limit["amount_usd"] = str(limit["amount_usd"])
             limit["evaluation_status"] = "WITHHELD_INCOMPLETE_COST_COVERAGE"

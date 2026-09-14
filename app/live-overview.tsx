@@ -6,7 +6,7 @@ type Overview = {
   account_name:string; last_collected_at:string|null; last_error:string|null;
   services:{service:string;resources:number}[];
   observed_costs:{basis:string;intervals:number;amount_usd:string|null}[];
-  limits:{id:string;name:string;amount_usd:string;tag_key:string;tag_value:string;observed_subtotal_usd:string|null}[];
+  limits:{id:string;name:string;amount_usd:string;filter_expression:{conditions:unknown[]};observed_subtotal_usd:string|null}[];
   limitations:string[];
 };
 
@@ -38,10 +38,10 @@ export function LiveOverview({account,revision}:{account:string;revision:number}
       <details><summary>Calculation exclusions</summary><ul>{data.limitations.map(item=><li key={item}>{item}</li>)}</ul></details>
       <h3>Monthly team limits</h3>
       <p>Limits are stored locally. Alarm decisions are withheld because account cost coverage is incomplete. No SNS or Lambda actions run.</p>
-      {data.limits.map(limit=><p key={limit.id}><strong>{limit.name}</strong> — {limit.tag_key}={limit.tag_value}: observed subtotal ${limit.observed_subtotal_usd ?? "unavailable"}; monthly limit ${limit.amount_usd}. Status: evaluation withheld.</p>)}
+      {data.limits.map(limit=><p key={limit.id}><strong>{limit.name}</strong> — {limit.filter_expression.conditions.length} tag condition(s): observed subtotal ${limit.observed_subtotal_usd ?? "unavailable"}; monthly limit ${limit.amount_usd}. Status: evaluation withheld.</p>)}
       <form onSubmit={async event=>{
         event.preventDefault();setSaving(true);setError("");
-        try {await request(`/api/v1/accounts/${account}/limits`,{method:"POST",body:JSON.stringify({name,tag_key:key,tag_value:value,amount_usd:amount})});setSaved(n=>n+1);setName("");setValue("");setAmount("");}
+        try {await request(`/api/v1/accounts/${account}/teams`,{method:"POST",body:JSON.stringify({name,amount_usd:amount,filter_expression:{kind:"group",operator:"AND",conditions:[{kind:"tag",key,operator:"EQUALS",value}]}})});setSaved(n=>n+1);setName("");setValue("");setAmount("");}
         catch(error){setError((error as Error).message);}finally{setSaving(false);}
       }}>
         <div className="onboarding-grid">

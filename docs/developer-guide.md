@@ -102,7 +102,10 @@ curl --fail http://127.0.0.1:8000/api/v1/quality
 
 **Do not use /api/v1/quality as a production readiness or alarm gate.** Its current response is a placeholder. It does not call the evaluator or check inventory, pricing, usage, credentials or database state.
 
-No accounts, resources, costs, limits or SNS API routes are implemented. Requests to those paths will not perform the target workflow.
+Account, resource, observed-cost and team routes are implemented for the local
+pilot. Team endpoints are under `/api/v1/accounts/{account_id}/teams`; preview
+accepts a validated filter expression and resource drill-down takes a stored
+team ID. SNS delivery remains disabled.
 
 ## 5. Isolated Compose development
 
@@ -115,7 +118,8 @@ docker compose ps
 docker compose logs --tail=100 api
 ```
 
-The API waits for the database container health check, but it does not connect to the database. Supplying DATABASE_URL does not establish persistence.
+The API waits for the database health check, initializes the current schema,
+and persists live inventory, observations, schedules and team definitions.
 
 To apply the draft DDL to a **new disposable database**, explicitly:
 

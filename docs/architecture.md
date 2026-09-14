@@ -128,6 +128,26 @@ No scheduled price refresh, complete instance-type inventory, price checksum gen
 
 ## 6. Monthly limits and notification semantics
 
+### Implemented live team scope
+
+The pilot stores a team definition and monthly USD limit in
+`pilot_team_limits`. A filter is a bounded JSON expression tree: a group uses
+`AND` or `OR`, and leaves compare AWS tag keys with `EQUALS`, `NOT_EQUALS`,
+`EXISTS`, or `NOT_EXISTS`. The API accepts no more than 20 leaves and four
+nested levels. Keys and values are always SQL bind parameters; only validated
+operators and fixed JSONB expressions enter generated SQL.
+
+Preview and resource drill-down evaluate the expression against the latest
+`resources.metadata.tags`. Cost attribution evaluates the same expression
+against `observed_costs.tags`, which is the tag snapshot stored for that usage
+interval. A later tag change therefore does not move earlier observed cost to
+the new owner. Team definitions are account-scoped in every lookup.
+
+The current UI creates flat ALL/ANY rule sets; the persisted representation and
+backend evaluator also support nested groups for future UI composition. Team
+totals can overlap when filter definitions overlap and must not be summed as an
+account total.
+
 The domain policy carries dashboard ID, limit version, amount, threshold, period boundaries, maximum data age and required confirmation count.
 
 The evaluator checks numeric bounds, complete supplied pricing coverage, freshness, evaluation period and duplicate state. It compares cost / limit × 100 with the threshold. Two qualifying observations with strictly increasing observation times produce READY by default. Repeating the same snapshot does not advance confirmation.
@@ -154,12 +174,14 @@ Incomplete or stale inputs should produce a visible blocked evaluation, not a bu
 | resource_tag_history | Observed ownership intervals | Transitions hidden between polls |
 | pricing_catalog | Price dimensions and effective versions | Ingestion, provenance and invalidation |
 | cost_intervals | Versioned calculated amounts | Materialization and aggregation |
-| dashboards | Account-scoped filter expression | Validated filter AST and RBAC |
-| dashboard_limits | Versioned limits | Editing API and policy validation |
+| pilot_team_limits | Account-scoped filter expression and limit | Update/delete workflow, RBAC and durable policy versions |
 | threshold_events | Unique threshold records | Transactional evaluator and publisher |
 | collection_jobs | Durable scheduled work with leases and retries | Concurrent worker-pool capacity validation |
 
-There are no user/role/grant tables, usage metric tables, audit-log table, outbox-attempt table, or schema migration runner. JSONB filter storage does not implement an AND/OR query language.
+There are no user/role/grant tables, usage metric tables, audit-log table,
+outbox-attempt table, or schema migration runner. The JSONB team-filter
+language is implemented, but authorization and query-plan validation at target
+cardinality remain release gates.
 
 Proposed indexes are starting points. Validate query plans against representative resource/tag cardinality. Retention must retain baseline state/tag/price records needed to calculate intervals crossing the retention boundary; deleting everything older than 90 days is incorrect.
 

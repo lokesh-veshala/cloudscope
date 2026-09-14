@@ -6,6 +6,7 @@ PAGE = (Path(__file__).resolve().parents[2] / "app/page.tsx").read_text()
 MANAGEMENT = (Path(__file__).resolve().parents[2] / "app/management.tsx").read_text()
 ONBOARDING = (Path(__file__).resolve().parents[2] / "app/aws-onboarding.ts").read_text()
 LIVE_DASHBOARD = (Path(__file__).resolve().parents[2] / "app/live-dashboard.tsx").read_text()
+LIVE_TEAMS = (Path(__file__).resolve().parents[2] / "app/live-teams.tsx").read_text()
 
 class DashboardContractTests(unittest.TestCase):
     def test_management_views_are_wired(self):
@@ -61,3 +62,10 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('Unavailable periods are not drawn as zero', LIVE_DASHBOARD)
         self.assertIn('Complete AWS account cost and notifications remain disabled', LIVE_DASHBOARD)
         self.assertNotIn('$4,137', LIVE_DASHBOARD)
+
+    def test_live_teams_support_exact_and_or_filters_and_drilldown(self):
+        self.assertIn('label:"Teams & limits"', LIVE_DASHBOARD)
+        for marker in ('"AND"|"OR"', 'Preview matched resources', '/teams/preview',
+                       '/resources`', 'case-sensitively', 'WITHHELD'):
+            self.assertIn(marker, LIVE_TEAMS)
+        self.assertNotIn('status: "Normal"', LIVE_TEAMS)

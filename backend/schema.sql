@@ -195,3 +195,14 @@ CREATE TABLE IF NOT EXISTS pilot_team_limits (
   amount_usd numeric(20,6) NOT NULL CHECK(amount_usd > 0),
   created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE pilot_team_limits ADD COLUMN IF NOT EXISTS filter_expression jsonb;
+ALTER TABLE pilot_team_limits ADD COLUMN IF NOT EXISTS configuration_version integer NOT NULL DEFAULT 1;
+UPDATE pilot_team_limits
+SET filter_expression = jsonb_build_object(
+  'kind', 'group', 'operator', 'AND', 'conditions', jsonb_build_array(
+    jsonb_build_object('kind', 'tag', 'key', tag_key, 'operator', 'EQUALS', 'value', tag_value)
+  )
+)
+WHERE filter_expression IS NULL;
+ALTER TABLE pilot_team_limits ALTER COLUMN filter_expression SET NOT NULL;
+CREATE INDEX IF NOT EXISTS pilot_team_limits_account_idx ON pilot_team_limits(cloud_account_id, created_at);

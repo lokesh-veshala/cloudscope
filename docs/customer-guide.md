@@ -42,9 +42,10 @@ Deploy the template in the selected test account with IAM resource acknowledgeme
 
 ## Availability
 
-CloudScope currently combines a demonstration dashboard with a test-account
-collector. It can register the deployed stack and collect inventory, but it
-cannot yet calculate AWS spend, save shared team limits, or send notifications.
+CloudScope currently combines a reference dashboard with a live pilot. It can
+register the deployed stack, collect inventory, calculate explicitly labelled
+observed partial subtotals, and store local team limits. It cannot yet produce
+complete AWS spend or send notifications.
 
 The demo can be used to review the interface and agree on requirements. Do not enter AWS access keys, private keys, customer billing data or production credentials.
 
@@ -55,7 +56,11 @@ The demo can be used to review the interface and agree on requirements. Do not e
 3. Open Resources and combine search, service and region filters. These filter sample records only.
 4. Hover over a chart point, focus it using the keyboard, or tap it to display its sample cost.
 5. Open Date Range. The complete sample snapshot covers September 1–13, 2026. Other ranges return “Data unavailable”; they do not estimate missing usage. The date range accepts 1–90 days.
-6. Open Team Limits to review illustrative threshold scenarios. There is no editable or enforced customer policy yet.
+6. Open **Teams & limits**, enter a team name and monthly limit, then define tag
+   rules. Choose **ALL conditions (AND)** when every rule must match or **ANY
+   condition (OR)** when one rule is sufficient. Preview the exact current
+   matches before saving. Select a saved team card to inspect its resources.
+   Limit evaluation stays withheld while cost coverage is incomplete.
 7. Open Cloud Accounts to register and test one non-production AWS account. The
    Shared Engineering menu still identifies the demo workspace and does not yet
    switch the main dashboard to live data.

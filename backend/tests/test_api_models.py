@@ -5,7 +5,7 @@ from pydantic import ValidationError
 from fastapi import HTTPException
 
 from api import (CollectionScheduleUpdate, PilotLimitCreate, _compile_filter,
-                 _reporting_window, _storage_pricing_summary,
+                 _five_minute_window, _reporting_window, _storage_pricing_summary,
                  _validate_filter_expression)
 
 
@@ -40,6 +40,15 @@ class ApiModelTests(unittest.TestCase):
                            (date(2026, 1, 1), date(2026, 9, 1))):
             with self.assertRaises(HTTPException):
                 _reporting_window(start, end, now)
+
+    def test_five_minute_trend_window_is_bounded_to_seven_days(self):
+        now = datetime(2026, 9, 14, 12, tzinfo=timezone.utc)
+        start, end = _five_minute_window(now, 10_080)
+        self.assertEqual(end, now)
+        self.assertEqual((end - start).total_seconds(), 7 * 24 * 3600)
+        for minutes in (59, 10_081):
+            with self.assertRaises(HTTPException):
+                _five_minute_window(now, minutes)
 
     def test_team_filter_normalizes_nested_and_or_groups(self):
         value = _validate_filter_expression({"kind": "group", "operator": "AND", "conditions": [

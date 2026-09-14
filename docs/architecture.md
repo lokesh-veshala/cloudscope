@@ -152,6 +152,14 @@ Team deletion is a local soft delete. It removes the definition from active
 queries while retaining its record for later audit and recovery work; it never
 calls an AWS resource mutation API.
 
+The account overview uses a separate bounded trend query for interactive
+operations. It returns five-minute buckets for a caller-selected rolling window
+between one hour and seven days. The backend emits every bucket, including
+`NO_OBSERVATION`, `UNRESOLVED`, and `PARTIAL` states. `amount_usd` remains null
+when no priced input exists, allowing the UI to break the line instead of
+manufacturing a zero-cost point. The seven-day bound limits the response to
+2,016 buckets.
+
 The domain policy carries dashboard ID, limit version, amount, threshold, period boundaries, maximum data age and required confirmation count.
 
 The evaluator checks numeric bounds, complete supplied pricing coverage, freshness, evaluation period and duplicate state. It compares cost / limit × 100 with the threshold. Two qualifying observations with strictly increasing observation times produce READY by default. Repeating the same snapshot does not advance confirmation.

@@ -45,7 +45,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="CloudScope API", version="1.5.1", lifespan=lifespan)
+app = FastAPI(title="CloudScope API", version="1.6.0", lifespan=lifespan)
 allowed_origins = [
     origin.strip()
     for origin in os.environ.get(
@@ -842,6 +842,63 @@ def _reporting_window(start_date: date | None, end_date: date | None,
     return start, end
 
 
+def _five_minute_window(now: datetime, window_minutes: int) -> tuple[datetime, datetime]:
+    if window_minutes < 60 or window_minutes > 10_080:
+        raise HTTPException(422, "trend window must be between 1 hour and 7 days")
+    return now - timedelta(minutes=window_minutes), now
+
+
+@app.get("/api/v1/accounts/{account_id}/cost-trend")
+def five_minute_cost_trend(
+    account_id: UUID,
+    window_minutes: int = Query(default=1_440, ge=60, le=10_080),
+):
+    """Return a bounded five-minute observed-cost series without zero-filling gaps."""
+    _account(account_id)
+    start, end = _five_minute_window(datetime.now(timezone.utc), window_minutes)
+    with engine.connect() as connection:
+        trend = rows(connection.execute(text("""WITH buckets AS (
+            SELECT bucket_start,
+              LEAST(bucket_start + interval '5 minutes', :end) AS bucket_end
+            FROM generate_series(
+              :start,
+              :end - interval '1 microsecond',
+              interval '5 minutes') AS series(bucket_start)
+          ), matching AS (
+            SELECT c.* FROM observed_costs c
+            JOIN resources r ON r.id=c.resource_id
+            WHERE r.cloud_account_id=:account AND c.usage_end>:start
+              AND c.usage_start<:end
+          )
+          SELECT b.bucket_start,
+            SUM(m.amount_usd * EXTRACT(EPOCH FROM (
+              LEAST(m.usage_end,b.bucket_end)-GREATEST(m.usage_start,b.bucket_start))) /
+              EXTRACT(EPOCH FROM (m.usage_end-m.usage_start)))
+              FILTER (WHERE m.amount_usd IS NOT NULL) AS amount_usd,
+            count(m.resource_id) FILTER (WHERE m.amount_usd IS NOT NULL)
+              AS priced_intervals,
+            count(m.resource_id) FILTER (WHERE m.amount_usd IS NULL)
+              AS unresolved_intervals
+          FROM buckets b LEFT JOIN matching m ON m.usage_end>b.bucket_start
+            AND m.usage_start<b.bucket_end
+          GROUP BY b.bucket_start ORDER BY b.bucket_start"""),
+            {"account": account_id, "start": start, "end": end}))
+    for item in trend:
+        value = item["amount_usd"]
+        item["amount_usd"] = str(value) if value is not None else None
+        if item["priced_intervals"] and item["unresolved_intervals"]:
+            item["coverage_status"] = "PARTIAL"
+        elif item["priced_intervals"]:
+            item["coverage_status"] = "PRICED"
+        elif item["unresolved_intervals"]:
+            item["coverage_status"] = "UNRESOLVED"
+        else:
+            item["coverage_status"] = "NO_OBSERVATION"
+    return {"period_start": start, "period_end": end,
+            "bucket_minutes": 5, "window_minutes": window_minutes,
+            "points": trend, "complete_account_cost": False}
+
+
 @app.get("/api/v1/accounts/{account_id}/overview")
 def live_overview(account_id: UUID, start_date: date | None = None,
                   end_date: date | None = None):
@@ -874,25 +931,6 @@ def live_overview(account_id: UUID, start_date: date | None = None,
             count(*) FILTER (WHERE c.amount_usd IS NULL) AS unresolved_intervals,
             {subtotal} AS amount_usd {scope}
             GROUP BY r.provider_resource_type ORDER BY amount_usd DESC NULLS LAST"""), args))
-        trend = rows(connection.execute(text("""WITH daily AS (
-            SELECT bucket.day::date AS day,
-              SUM(c.amount_usd * EXTRACT(EPOCH FROM (
-                LEAST(c.usage_end, :end, bucket.day + interval '1 day') -
-                GREATEST(c.usage_start, :start, bucket.day))) /
-                EXTRACT(EPOCH FROM (c.usage_end-c.usage_start))) AS daily_usd,
-              count(*) AS intervals
-            FROM observed_costs c
-            JOIN resources r ON r.id=c.resource_id
-            CROSS JOIN LATERAL generate_series(
-              date_trunc('day', GREATEST(c.usage_start,:start)),
-              date_trunc('day', LEAST(c.usage_end,:end)-interval '1 microsecond'),
-              interval '1 day') AS bucket(day)
-            WHERE r.cloud_account_id=:id AND c.amount_usd IS NOT NULL
-              AND c.usage_end>:start AND c.usage_start<:end
-            GROUP BY bucket.day)
-            SELECT day, daily_usd,
-              SUM(daily_usd) OVER (ORDER BY day) AS cumulative_usd, intervals
-            FROM daily ORDER BY day"""), args))
         top_resources = rows(connection.execute(text(f"""SELECT r.id, r.name,
             r.provider_resource_id, r.provider_resource_type AS service,
             r.region, r.state, r.metadata #>> '{{pricing,status}}' AS pricing_status,
@@ -918,15 +956,15 @@ def live_overview(account_id: UUID, start_date: date | None = None,
     for cost in costs:
         cost["amount_usd"] = str(cost["amount_usd"]) if cost["amount_usd"] is not None else None
     summary["observed_subtotal_usd"] = str(summary["observed_subtotal_usd"]) if summary["observed_subtotal_usd"] is not None else None
-    for collection in (service_costs, trend, top_resources):
+    for collection in (service_costs, top_resources):
         for item in collection:
-            for field in ("amount_usd", "daily_usd", "cumulative_usd"):
+            for field in ("amount_usd",):
                 if field in item and item[field] is not None:
                     item[field] = str(item[field])
     return {"account_name": account["display_name"], "period_start": start, "period_end": end,
             "last_collected_at": account["last_collected_at"], "last_error": account["last_error"],
             "services": services, "observed_costs": costs, "cost_summary": summary,
-            "service_costs": service_costs, "cost_trend": trend,
+            "service_costs": service_costs,
             "top_resources": top_resources, "inventory": inventory, "limits": limits,
             "complete_account_cost_usd": None, "alerts_evaluated": False,
             "limitations": ["Supported EC2 compute and provisioned EBS dimensions are priced",

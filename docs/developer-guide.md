@@ -112,6 +112,12 @@ test delivery is available at
 `POST /api/v1/accounts/{account_id}/notifications/test`; automatic threshold
 delivery remains disabled.
 
+The live overview requests `GET /api/v1/accounts/{account_id}/cost-trend` with
+`window_minutes` between 60 and 10,080. The endpoint returns fixed five-minute
+buckets. A bucket with no priced observations has `amount_usd=null`; clients
+must render that value as a gap rather than zero. The query is bounded to 2,016
+buckets to keep response size and browser rendering predictable.
+
 ## 5. Isolated Compose development
 
 The Compose file runs the API, PostgreSQL and a frontend development server. It includes example database credentials, publishes API port 8001 and web port 5173 on the configured bind address (loopback by default), and does not configure TLS or authentication. Run it only on an isolated development machine with appropriate inbound restrictions. See [live integration status](live-integration-status.md) for update instructions and calculation exclusions.

@@ -64,6 +64,16 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('Complete AWS account cost and notifications remain disabled', LIVE_DASHBOARD)
         self.assertNotIn('$4,137', LIVE_DASHBOARD)
 
+    def test_live_overview_has_adjustable_five_minute_trend(self):
+        self.assertIn('/cost-trend?window_minutes=', LIVE_DASHBOARD)
+        self.assertIn('Cost per 5-minute bucket', LIVE_DASHBOARD)
+        for minutes in ('value={60}', 'value={360}', 'value={1440}',
+                        'value={4320}', 'value={10080}'):
+            self.assertIn(minutes, LIVE_DASHBOARD)
+        for handler in ('onPointerMove', 'onPointerLeave', 'onClick', 'onKeyDown'):
+            self.assertIn(handler, LIVE_DASHBOARD)
+        self.assertIn('line gaps mean unavailable', LIVE_DASHBOARD)
+
     def test_live_teams_support_exact_and_or_filters_and_drilldown(self):
         self.assertIn('label:"Teams & limits"', LIVE_DASHBOARD)
         for marker in ('"AND"|"OR"', 'Preview matched resources', '/teams/preview',

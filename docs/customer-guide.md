@@ -54,7 +54,10 @@ The demo can be used to review the interface and agree on requirements. Do not e
 1. Open the dashboard link supplied by the maintainer and confirm the DEMO DATA label.
 2. Use Overview to inspect the sample layout. Cards are illustrative and are not a reconciled account statement; sample sections may represent different scenarios.
 3. Open Resources and combine search, service and region filters. These filter sample records only.
-4. Hover over a chart point, focus it using the keyboard, or tap it to display its sample cost.
+4. On the live overview, choose a trend window from one hour through seven
+   days. The line represents observed cost in five-minute buckets. Hover, tap,
+   or focus the graph and use the arrow keys to inspect a bucket. A line gap
+   means the cost is unavailable; it does not mean zero usage or zero cost.
 5. Open Date Range. The complete sample snapshot covers September 1–13, 2026. Other ranges return “Data unavailable”; they do not estimate missing usage. The date range accepts 1–90 days.
 6. Open **Teams & limits**, enter a team name and monthly limit, then define tag
    rules. Choose **ALL conditions (AND)** when every rule must match or **ANY

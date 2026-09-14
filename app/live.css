@@ -19,3 +19,31 @@
 .account-row pre { grid-column: 1 / -1; max-height: 260px; overflow: auto; padding: 14px; border-radius: 8px; background: #101b31; color: #dce7ff; font-size: 12px; white-space: pre-wrap; }
 .account-row button:disabled { cursor: not-allowed; opacity: .5; }
 @media (max-width: 800px) { .account-row { grid-template-columns: 1fr 1fr; } .account-row > div { grid-column: 1 / -1; } }
+
+/* Live views prioritize operational readability over dense demo styling. */
+.live-shell .panel-head h2 { font-size: 17px; line-height: 1.3; }
+.live-shell .panel-head span { font-size: 12px; line-height: 1.4; }
+.live-shell .panel-head > button { font-size: 13px; }
+.live-shell .chart-foot { font-size: 12px; line-height: 1.45; gap: 16px; }
+.live-shell .cost-chart text { font-size: 12px; }
+.live-shell .kpis article > span { font-size: 12px; }
+.live-shell .kpis small { font-size: 12px; line-height: 1.4; }
+.live-shell .live-service { grid-template-columns: 22px 10px 48px minmax(80px,1fr) 112px; min-height: 42px; font-size: 13px; }
+.live-shell .live-service b,.live-shell .live-service strong { font-size: 13px; }
+.live-shell .live-service small { font-size: 11px; line-height: 1.3; }
+.live-shell .live-limit { min-height: 58px; }
+.live-shell .live-limit > div > b { font-size: 14px; }
+.live-shell .live-limit span,.live-shell .muted-copy,.live-shell .live-freshness { font-size: 13px; line-height: 1.55; }
+.live-shell .quality-list span { min-height: 38px; font-size: 13px; line-height: 1.4; }
+.live-shell .quality-list b { font-size: 12px; }
+.live-shell .live-limitations summary { font-size: 14px; }
+.live-shell .live-limitations li { font-size: 13px; line-height: 1.5; }
+.live-shell th { font-size: 11px; }
+.live-shell td { font-size: 13px; line-height: 1.4; }
+.live-shell td small { font-size: 11px; }
+.trend-window { display: flex; align-items: center; gap: 8px; color: #68758b; font-size: 11px; font-weight: 800; letter-spacing: .08em; }
+.trend-window select { height: 34px; border: 1px solid #cfd7e4; border-radius: 7px; background: white; color: #33425a; padding: 0 9px; font-size: 13px; letter-spacing: 0; }
+.five-minute-chart { touch-action: none; outline: none; }
+.five-minute-chart:focus-visible { outline: 3px solid #316cf4; outline-offset: 3px; }
+.trend-error { color: #a33f46; }
+@media(max-width:760px){.live-shell .panel-head{align-items:flex-start;gap:10px}.trend-window{align-items:flex-start;flex-direction:column}.live-shell .chart-foot{font-size:11px}.live-shell .quality-list span{align-items:flex-start;flex-wrap:wrap}.live-shell .quality-list b{width:100%;margin-left:19px}}

@@ -103,6 +103,8 @@ is excluded from alarm evaluation. Other incomplete dimensions remain unresolved
 ## What is implemented
 
 - React/TypeScript dashboard with sample resource filters, date controls, chart tooltips, and management views.
+- Live five-minute observed-cost trend with adjustable windows from one hour to
+  seven days. Missing and unresolved buckets remain explicit gaps, not zeroes.
 - Python interval calculator using Decimal arithmetic.
 - Live account registration, Roles Anywhere connection checks, and V1 AWS inventory collectors.
 - EC2 Linux/shared On-Demand catalog adapter and Spot history adapter, exercised with fixtures.
@@ -133,7 +135,7 @@ From the repository root, using Python 3.13:
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend python3 -m unittest discover -s backend/tests -v
 ```
 
-The current suite contains 73 tests. No AWS account is required. Source-level UI
+The current suite contains 75 tests. No AWS account is required. Source-level UI
 checks are not browser tests.
 
 See the [developer guide](docs/developer-guide.md) for frontend and API setup.

@@ -6,7 +6,7 @@ type Overview = {
   account_name:string; last_collected_at:string|null; last_error:string|null;
   services:{service:string;resources:number}[];
   observed_costs:{basis:string;intervals:number;amount_usd:string|null}[];
-  limits:{id:string;name:string;amount_usd:string;filter_expression:{conditions:unknown[]};observed_subtotal_usd:string|null}[];
+  limits:{id:string;name:string;amount_usd:string;baseline_amount_usd:string;effective_total_usd:string|null;filter_expression:{conditions:unknown[]};observed_subtotal_usd:string|null}[];
   limitations:string[];
 };
 
@@ -14,7 +14,7 @@ export function LiveOverview({account,revision}:{account:string;revision:number}
   const [data,setData]=useState<Overview|null>(null);
   const [error,setError]=useState("");
   const [name,setName]=useState(""); const [key,setKey]=useState("Team");
-  const [value,setValue]=useState(""); const [amount,setAmount]=useState("");
+  const [value,setValue]=useState(""); const [amount,setAmount]=useState(""); const [baseline,setBaseline]=useState("");
   const [saving,setSaving]=useState(false); const [saved,setSaved]=useState(0);
   useEffect(()=>{
     let active=true;
@@ -37,16 +37,17 @@ export function LiveOverview({account,revision}:{account:string;revision:number}
       <div className="table-wrap"><table><thead><tr><th>Basis</th><th>Intervals</th><th>USD subtotal</th></tr></thead><tbody>{data.observed_costs.map(row=><tr key={row.basis}><td>{row.basis}</td><td>{row.intervals}</td><td>{row.amount_usd === null ? "Unavailable" : `$${Number(row.amount_usd).toFixed(6)}`}</td></tr>)}</tbody></table></div>
       <details><summary>Calculation exclusions</summary><ul>{data.limitations.map(item=><li key={item}>{item}</li>)}</ul></details>
       <h3>Monthly team limits</h3>
-      <p>Limits are stored locally. Alarm decisions are withheld because account cost coverage is incomplete. No SNS or Lambda actions run.</p>
-      {data.limits.map(limit=><p key={limit.id}><strong>{limit.name}</strong> — {limit.filter_expression.conditions.length} tag condition(s): observed subtotal ${limit.observed_subtotal_usd ?? "unavailable"}; monthly limit ${limit.amount_usd}. Status: evaluation withheld.</p>)}
+      <p>Limits are stored locally. Alerts use the declared first-month baseline plus complete observations after team creation.</p>
+      {data.limits.map(limit=><p key={limit.id}><strong>{limit.name}</strong> — {limit.filter_expression.conditions.length} tag condition(s): declared baseline ${limit.baseline_amount_usd}; observed after creation ${limit.observed_subtotal_usd ?? "unavailable"}; evaluated total ${limit.effective_total_usd ?? "unavailable"}; monthly limit ${limit.amount_usd}.</p>)}
       <form onSubmit={async event=>{
         event.preventDefault();setSaving(true);setError("");
-        try {await request(`/api/v1/accounts/${account}/teams`,{method:"POST",body:JSON.stringify({name,amount_usd:amount,filter_expression:{kind:"group",operator:"AND",conditions:[{kind:"tag",key,operator:"EQUALS",value}]}})});setSaved(n=>n+1);setName("");setValue("");setAmount("");}
+        try {await request(`/api/v1/accounts/${account}/teams`,{method:"POST",body:JSON.stringify({name,amount_usd:amount,baseline_amount_usd:baseline||"0",filter_expression:{kind:"group",operator:"AND",conditions:[{kind:"tag",key,operator:"EQUALS",value}]}})});setSaved(n=>n+1);setName("");setValue("");setAmount("");setBaseline("");}
         catch(error){setError((error as Error).message);}finally{setSaving(false);}
       }}>
         <div className="onboarding-grid">
           <label>Limit name<input required maxLength={100} value={name} onChange={e=>setName(e.target.value)}/></label>
           <label>Monthly limit (USD)<input required type="number" min="0.01" step="0.01" value={amount} onChange={e=>setAmount(e.target.value)}/></label>
+          <label>Existing MTD baseline (USD)<input type="number" min="0" step="0.000001" value={baseline} onChange={e=>setBaseline(e.target.value)}/></label>
           <label>Ownership tag key<input required value={key} onChange={e=>setKey(e.target.value)}/></label>
           <label>Ownership tag value<input required value={value} onChange={e=>setValue(e.target.value)}/></label>
         </div><button disabled={saving} type="submit">{saving?"Saving…":"Save local limit"}</button>

@@ -97,7 +97,7 @@ and calculates conservative observed storage intervals. Supported EBS volume
 dimensions are complete; EFS and FSx are explicitly storage-only and partial.
 See [Storage cost models](docs/storage-cost-models.md) for the coverage matrix.
 Before historical Spot coverage exists, Linux/shared Spot instances use a clearly
-marked 42% discount assumption against the exact On-Demand rate. This fallback
+marked 52% discount assumption against the exact On-Demand rate. This fallback
 is excluded from alarm evaluation. Other incomplete dimensions remain unresolved.
 
 ## What is implemented
@@ -111,6 +111,9 @@ is excluded from alarm evaluation. Other incomplete dimensions remain unresolved
 - Strict EBS, EFS and FSx storage catalog adapters with explicit partial/unresolved outcomes.
 - Durable automatic 80%/100% team-limit evaluation with two-observation
   confirmation, database deduplication, bounded SNS retries and delivery history.
+- Optional user-declared first-month team baseline. Alert totals are calculated
+  as that baseline plus eligible observed cost after team creation; both
+  components remain separate in the UI, database event and SNS payload.
 - PostgreSQL state/tag history persistence and a local four-service Compose stack.
 - Live team creation with bounded AND/OR tag filters, server-side match previews,
   monthly limits, and exact resource drill-down. Historical observed costs use
@@ -122,8 +125,9 @@ is excluded from alarm evaluation. Other incomplete dimensions remain unresolved
   separately and are never rendered as zero cost.
 - Audited manual and automatic SNS delivery to the account's approved topic.
   SNS can invoke a subscribed customer Lambda. Automatic events are generated
-  only when the team has complete, fresh calendar-month cost evidence; partial,
-  assumed Spot, unsupported, stale or unresolved inputs are visibly blocked.
+  only when cost evidence after the monitoring boundary is complete and fresh.
+  User-declared baselines cannot bypass partial, assumed Spot, unsupported, stale
+  or unresolved observations, which remain visibly blocked.
 
 The target system still requires complete multi-service usage ingestion,
 historical pricing persistence, server-side authorization, retention cleanup,
@@ -137,7 +141,7 @@ From the repository root, using Python 3.13:
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend python3 -m unittest discover -s backend/tests -v
 ```
 
-The current suite contains 82 tests. No AWS account is required. Source-level UI
+The current suite contains 84 tests. No AWS account is required. Source-level UI
 checks are not browser tests.
 
 See the [developer guide](docs/developer-guide.md) for frontend and API setup.

@@ -184,8 +184,8 @@ class CollectorTests(unittest.TestCase):
                  "state":"running","metadata":{"purchase_model":"SPOT","os":"Linux","tenancy":"default","instance_type":"t3.micro"}}]
         result = price_running_ec2(AwsAccountConfig("123456789012","us-east-1","test"), rows)
         self.assertEqual(result["i-spot"]["status"], "ESTIMATED")
-        self.assertEqual(result["i-spot"]["usd_per_hour"], "0.0580")
-        self.assertEqual(result["i-spot"]["assumed_discount_percent"], "42")
+        self.assertEqual(result["i-spot"]["usd_per_hour"], "0.0480")
+        self.assertEqual(result["i-spot"]["assumed_discount_percent"], "52")
         self.assertFalse(result["i-spot"]["alert_eligible"])
 
 

@@ -166,6 +166,15 @@ The evaluator checks numeric bounds, complete supplied pricing coverage, freshne
 
 The deduplication key contains dashboard, period start, limit version and threshold. Limit changes therefore permit a new event. Defaults are a ten-minute maximum age and two confirmations.
 
+For a team created after the UTC month begins, V1 supports a user-declared
+baseline for the interval from month start until team creation. The evaluated
+first-month amount is `declared baseline + eligible observed cost after team
+creation`. The baseline expires at the next UTC month boundary. It is stored and
+published separately from observed cost so it cannot be mistaken for provider
+evidence. Post-creation incomplete, stale, partial, assumed or unsupported cost
+evidence still blocks the event. Changing a baseline requires a new team/limit
+configuration so the event deduplication contract is not silently rewritten.
+
 The live evaluator persists confirmations by team, UTC month, limit version and
 threshold. READY inserts a unique `pilot_threshold_events` row in the same
 transaction. This survives restarts and makes repeated collections idempotent.

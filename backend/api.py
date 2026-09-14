@@ -47,7 +47,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="CloudScope API", version="1.7.0", lifespan=lifespan)
+app = FastAPI(title="CloudScope API", version="1.8.0", lifespan=lifespan)
 allowed_origins = [
     origin.strip()
     for origin in os.environ.get(
@@ -265,6 +265,8 @@ def alert_history():
     with engine.connect() as connection:
         return rows(connection.execute(text("""SELECT e.id,e.event_type,e.status,
             e.threshold_percent,e.estimated_cost_usd,e.limit_usd,e.usage_percent,
+            e.baseline_amount_usd,e.observed_cost_usd,e.monitoring_started_at,
+            e.period_basis,
             e.sns_message_id,e.error_message,e.created_at,e.published_at,
             t.name AS team_name,a.display_name AS account_name
           FROM pilot_threshold_events e
@@ -504,6 +506,9 @@ def quality():
 class PilotLimitCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     amount_usd: Decimal = Field(gt=0, max_digits=20, decimal_places=6, allow_inf_nan=False)
+    baseline_amount_usd: Decimal = Field(default=Decimal("0"), ge=0,
+                                         max_digits=20, decimal_places=6,
+                                         allow_inf_nan=False)
     filter_expression: dict
 
     @field_validator("name")
@@ -615,7 +620,12 @@ def _team_alert_snapshot(connection, account_id, team, period_start,
     current_sql, current_args = _compile_filter(
         expression, "COALESCE(r.metadata->'tags','{}'::jsonb)", token + "_current")
     cost_sql, cost_args = _compile_filter(expression, "c.tags", token + "_cost")
-    args = {"account": account_id, "start": period_start, "end": data_as_of,
+    monitoring_start = max(period_start, team["created_at"])
+    baseline = (Decimal(team["baseline_amount_usd"])
+                if team["created_at"].year == period_start.year
+                and team["created_at"].month == period_start.month
+                else Decimal("0"))
+    args = {"account": account_id, "start": monitoring_start, "end": data_as_of,
             **current_args, **cost_args}
     snapshot = dict(connection.execute(text(f"""WITH current_members AS (
           SELECT r.id, r.first_seen, r.provider_resource_type,
@@ -645,24 +655,27 @@ def _team_alert_snapshot(connection, account_id, team, period_start,
             EXTRACT(EPOCH FROM (usage_end-usage_start))) AS cost_usd
         FROM matching_costs"""), args).mappings().one())
     reason = None
-    if team["created_at"] > period_start:
-        reason = "team_limit_started_after_month_begin"
-    elif snapshot["current_resources"] == 0:
+    snapshot["monitoring_started_at"] = monitoring_start
+    snapshot["baseline_amount_usd"] = baseline
+    snapshot["observed_cost_usd"] = snapshot["cost_usd"]
+    snapshot["cost_usd"] = (baseline + Decimal(snapshot["cost_usd"])
+                            if snapshot["cost_usd"] is not None else None)
+    if snapshot["current_resources"] == 0:
         reason = "no_matching_resources_to_verify"
     elif snapshot["unsupported_resources"]:
         reason = "team_contains_services_without_complete_cost_models"
     elif snapshot["ineligible_rates"]:
         reason = "team_contains_partial_assumed_or_unresolved_rates"
     elif snapshot["resources_first_seen_after_period_start"]:
-        reason = "month_to_date_inventory_history_incomplete"
+        reason = "inventory_history_incomplete_after_monitoring_start"
     elif snapshot["intervals"] == 0:
         reason = "no_month_to_date_usage_intervals"
     elif snapshot["unresolved_intervals"]:
         reason = "month_to_date_usage_contains_unresolved_intervals"
     elif snapshot["resources_with_intervals"] < snapshot["current_resources"]:
         reason = "one_or_more_resources_have_no_cost_intervals"
-    elif snapshot["first_interval"] is None or snapshot["first_interval"] > period_start:
-        reason = "month_to_date_cost_history_incomplete"
+    elif snapshot["first_interval"] is None or snapshot["first_interval"] > monitoring_start:
+        reason = "cost_history_incomplete_after_monitoring_start"
     elif snapshot["last_interval"] is None or data_as_of - snapshot["last_interval"] > timedelta(minutes=10):
         reason = "cost_data_is_stale"
     return snapshot, reason
@@ -728,21 +741,31 @@ def _evaluate_and_deliver_alerts(account_id: UUID, account) -> dict:
                     connection.execute(text("""INSERT INTO pilot_threshold_events
                         (cloud_account_id,team_id,configuration_version,period_start,
                          period_end,threshold_percent,estimated_cost_usd,limit_usd,
-                         usage_percent,pricing_coverage,status,topic_arn)
+                         usage_percent,pricing_coverage,baseline_amount_usd,
+                         observed_cost_usd,monitoring_started_at,period_basis,
+                         status,topic_arn)
                         VALUES (:account,:team,:version,:start,:end,:threshold,
-                          :cost,:limit,:usage,1,'PENDING',:topic)
+                          :cost,:limit,:usage,1,:baseline,:observed,:monitoring,
+                          :basis,'PENDING',:topic)
                         ON CONFLICT DO NOTHING"""), {"account": account_id,
                         "team": team["id"], "version": team["configuration_version"],
                         "start": period_start, "end": period_end,
                         "threshold": threshold, "cost": cost,
                         "limit": team["amount_usd"], "usage": usage,
+                        "baseline": snapshot["baseline_amount_usd"],
+                        "observed": snapshot["observed_cost_usd"],
+                        "monitoring": snapshot["monitoring_started_at"],
+                        "basis": ("DECLARED_BASELINE_PLUS_MONITORING"
+                                  if (snapshot["monitoring_started_at"] > period_start
+                                      or snapshot["baseline_amount_usd"] > 0)
+                                  else "CALENDAR_MONTH"),
                         "topic": stored_account["sns_topic_arn"]})
                 decisions.append({"team_id": str(team["id"]),
                                   "threshold_percent": str(threshold),
                                   "decision": decision, "reason": reason})
     deliveries = _deliver_pending_alerts(account_id, account)
     return {"active": True, "evaluations": decisions, "deliveries": deliveries,
-            "safety_policy": "complete_month_to_date_costs_only"}
+            "safety_policy": "declared_baseline_plus_complete_observations_since_monitoring_start"}
 
 
 def _deliver_pending_alerts(account_id: UUID, account) -> list[dict]:
@@ -763,8 +786,20 @@ def _deliver_pending_alerts(account_id: UUID, account) -> list[dict]:
             "threshold_percent": str(event["threshold_percent"]),
             "limit_usd": str(event["limit_usd"]),
             "estimated_cost_usd": str(event["estimated_cost_usd"]),
+            "declared_baseline_usd": str(event["baseline_amount_usd"]),
+            "observed_cost_after_monitoring_start_usd": str(event["observed_cost_usd"]),
+            "monitoring_started_at": event["monitoring_started_at"].isoformat(),
+            "period_basis": event["period_basis"],
             "usage_percent": str(event["usage_percent"]),
-            "calculation_coverage": "COMPLETE", "is_test": False,
+            "baseline_source": (
+                "USER_DECLARED"
+                if event["period_basis"] == "DECLARED_BASELINE_PLUS_MONITORING"
+                else "NOT_APPLICABLE"),
+            "calculation_coverage": (
+                "DECLARED_BASELINE_PLUS_VERIFIED_OBSERVATIONS"
+                if event["period_basis"] == "DECLARED_BASELINE_PLUS_MONITORING"
+                else "VERIFIED_CALENDAR_MONTH_OBSERVATIONS"),
+            "is_test": False,
             "automatic_threshold_alert": True,
             "triggered_at": event["created_at"].isoformat()}
         result = publish_threshold_alert(_config(account), event["topic_arn"], payload)
@@ -814,16 +849,27 @@ def _team_alert_status(connection, team_id, period_start):
             "reason": priority["last_reason"], "evaluations": evaluations}
 
 
+def _team_baseline_for_window(team, start: datetime, end: datetime) -> Decimal:
+    created = team["created_at"]
+    month_start = created.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if start <= month_start < end and start <= created < end:
+        return Decimal(team["baseline_amount_usd"])
+    return Decimal("0")
+
+
 @app.post("/api/v1/accounts/{account_id}/teams", status_code=201)
 @app.post("/api/v1/accounts/{account_id}/limits", status_code=201, include_in_schema=False)
 def create_pilot_limit(account_id: UUID, payload: PilotLimitCreate):
     account = _account(account_id)
     with engine.begin() as connection:
         result = connection.execute(text("""INSERT INTO pilot_team_limits
-            (cloud_account_id,name,tag_key,tag_value,amount_usd,filter_expression)
-            VALUES (:account,:name,'','',:amount,CAST(:filter AS jsonb)) RETURNING id"""),
+            (cloud_account_id,name,tag_key,tag_value,amount_usd,
+             baseline_amount_usd,filter_expression)
+            VALUES (:account,:name,'','',:amount,:baseline,CAST(:filter AS jsonb))
+            RETURNING id"""),
             {"account": account_id, "name": payload.name,
              "amount": payload.amount_usd,
+             "baseline": payload.baseline_amount_usd,
              "filter": json.dumps(payload.filter_expression)}).scalar_one()
     return {"id": result, "notification_enabled": _valid_account_topic(account),
             "automatic_alerts_enabled": True,
@@ -886,19 +932,24 @@ def list_teams(account_id: UUID, start_date: date | None = None,
                 count(*) FILTER (WHERE r.metadata #>> '{{pricing,status}}' IN ('COMPLETE','PARTIAL','ESTIMATED')) AS resources_with_rates
                 FROM resources r WHERE r.cloud_account_id=:id AND r.deleted_at IS NULL
                 AND {current_sql}"""), {"id": account_id, **current_args}).mappings().one()
+            observation_start = max(start, team["created_at"])
             costs = connection.execute(text(f"""SELECT count(*) AS intervals,
                 count(*) FILTER (WHERE c.amount_usd IS NOT NULL) AS priced_intervals,
                 count(*) FILTER (WHERE c.amount_usd IS NULL) AS unresolved_intervals,
                 {subtotal} AS observed_subtotal_usd
                 FROM observed_costs c JOIN resources r ON r.id=c.resource_id
                 WHERE r.cloud_account_id=:id AND c.usage_end>:start AND c.usage_start<:end
-                AND {cost_sql}"""), {"id": account_id, "start": start, "end": end,
-                                      **cost_args}).mappings().one()
+                AND {cost_sql}"""), {"id": account_id, "start": observation_start,
+                                      "end": end, **cost_args}).mappings().one()
             team["filter_expression"] = expression
             team.update(dict(inventory)); team.update(dict(costs))
             team["amount_usd"] = str(team["amount_usd"])
             value = team["observed_subtotal_usd"]
             team["observed_subtotal_usd"] = str(value) if value is not None else None
+            baseline = _team_baseline_for_window(team, start, end)
+            team["baseline_amount_usd"] = str(baseline)
+            team["effective_total_usd"] = (str(Decimal(value) + baseline)
+                                            if value is not None else None)
             alert = _team_alert_status(connection, team["id"],
                                        start.replace(day=1, hour=0, minute=0,
                                                      second=0, microsecond=0))
@@ -1198,11 +1249,17 @@ def live_overview(account_id: UUID, start_date: date | None = None,
             expression = _stored_expression(limit)
             condition, condition_args = _compile_filter(
                 expression, "c.tags", f"overview_{str(limit['id']).replace('-', '')}")
+            observation_args = {**args, **condition_args,
+                                "start": max(start, limit["created_at"])}
             amount = connection.execute(text(f"SELECT {subtotal} {scope} AND {condition}"),
-                {**args, **condition_args}).scalar_one()
+                observation_args).scalar_one()
             limit["filter_expression"] = expression
             limit["observed_subtotal_usd"] = str(amount) if amount is not None else None
             limit["amount_usd"] = str(limit["amount_usd"])
+            baseline = _team_baseline_for_window(limit, start, end)
+            limit["baseline_amount_usd"] = str(baseline)
+            limit["effective_total_usd"] = (str(Decimal(amount) + baseline)
+                                             if amount is not None else None)
             alert = _team_alert_status(connection, limit["id"],
                                        now.replace(day=1, hour=0, minute=0,
                                                    second=0, microsecond=0))
@@ -1227,5 +1284,5 @@ def live_overview(account_id: UUID, start_date: date | None = None,
                 "Continuous provisioning between polls is assumed",
                 "No usage before the first observation is reconstructed",
                 "EFS/FSx throughput, access, backup and transfer dimensions remain excluded",
-                "Spot fallback assumes a 42% discount and is never alert eligible",
-                "Automatic 80%/100% evaluation runs after every collection; incomplete MTD teams are blocked"]}
+                "Spot fallback assumes a 52% discount and is never alert eligible",
+                "Automatic 80%/100% evaluation runs after every collection; incomplete post-monitoring evidence is blocked"]}

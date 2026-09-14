@@ -8,15 +8,18 @@ V1 inventory collectors, resource state/tag history, and strict Linux/shared EC2
 On-Demand catalog matching. Partial service failures are reported explicitly.
 
 Automatic 80%/100% evaluation now runs after each successful collection and
-publishes eligible events to the account's approved SNS topic. It remains
-fail-closed when complete calendar-month usage and price evidence is unavailable.
+publishes eligible events to the account's approved SNS topic. For a team created
+mid-month, the first-month total is the user-declared pre-creation baseline plus
+complete observed cost after creation. The baseline is never described as
+AWS-verified and cannot bypass incomplete post-creation usage or price evidence.
 Linux/shared Spot instances may display an
-explicit 42%-discount fallback against exact On-Demand pricing, but that value is
+explicit 52%-discount fallback against exact On-Demand pricing, but that value is
 classified as estimated and is never alarm-eligible. Windows and non-default
 tenancy remain unresolved.
 
-Validation performed locally: 82 Python tests passed, ESLint passed, and the
-Vinext production build passed. PostgreSQL/AWS end-to-end validation must run on
+Validation performed locally: 84 Python tests passed; frontend and schema checks
+are listed below. The Vinext production build passed. PostgreSQL/AWS end-to-end
+validation must run on
 the test VM because this build environment has neither Docker nor runtime AWS
 credentials.
 
@@ -77,7 +80,7 @@ Validation date: 2026-09-13 UTC
 
 ## Test result
 
-`82/82` unit and source-contract tests pass. The implementation retains Decimal
+`84/84` unit and source-contract tests pass. The implementation retains Decimal
 arithmetic for every financial threshold and amount.
 
 ## Release boundary

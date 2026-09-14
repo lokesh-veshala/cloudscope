@@ -250,7 +250,7 @@ def price_running_ec2(
                 cache[instance_type] = price
             is_spot = metadata.get("purchase_model") == "SPOT"
             hourly_rate = (
-                price.usd_per_unit * Decimal("0.58")
+                price.usd_per_unit * Decimal("0.48")
                 if is_spot
                 else price.usd_per_unit
             )
@@ -264,7 +264,7 @@ def price_running_ec2(
                 "source": (
                     "ASSUMED_SPOT_DISCOUNT" if is_spot else "AWS_PRICE_LIST"
                 ),
-                "assumed_discount_percent": "42" if is_spot else None,
+                "assumed_discount_percent": "52" if is_spot else None,
                 "alert_eligible": not is_spot,
             }
         except CatalogMatchError as exc:

@@ -54,7 +54,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend python3 -m unittest discover -s bac
 
 This suite uses the standard library and injected fake clients; it does not need boto3, FastAPI, Docker or AWS credentials.
 
-Expected baseline: 29 passing checks, including cost/alarm domain tests, AWS
+Expected baseline: 84 passing checks, including cost/alarm domain tests, AWS
 normalization and safety tests, and source-level dashboard contracts. A source
 assertion cannot prove browser behavior or live AWS/PostgreSQL integration.
 
@@ -114,6 +114,12 @@ test delivery is available at
 `POST /api/v1/accounts/{account_id}/notifications/test`. Automatic threshold
 evaluation runs after successful collections; `GET /api/v1/alerts` exposes its
 durable event and SNS delivery history.
+
+`POST /api/v1/accounts/{account_id}/teams` accepts an optional non-negative
+`baseline_amount_usd`. For the creation month, threshold evaluation begins at the
+team's `created_at` boundary and adds the declared baseline to observed cost.
+Alert rows and SNS payloads retain `baseline_amount_usd`, `observed_cost_usd`,
+`monitoring_started_at` and `period_basis` as separate audit fields.
 
 The live overview requests `GET /api/v1/accounts/{account_id}/cost-trend` with
 `window_minutes` between 60 and 10,080. The endpoint returns fixed five-minute

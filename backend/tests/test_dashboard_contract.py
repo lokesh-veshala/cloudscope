@@ -61,7 +61,7 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('<LiveDashboard onSample=', PAGE)
         self.assertIn('/overview?start_date=', LIVE_DASHBOARD)
         self.assertIn('Unavailable periods are not drawn as zero', LIVE_DASHBOARD)
-        self.assertIn('Automatic 80% and 100% alerts evaluate only complete month-to-date team costs', LIVE_DASHBOARD)
+        self.assertIn('declared first-month baseline plus complete observations after team creation', LIVE_DASHBOARD)
         self.assertNotIn('$4,137', LIVE_DASHBOARD)
 
     def test_live_overview_has_adjustable_five_minute_trend(self):
@@ -78,6 +78,9 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn('label:"Teams & limits"', LIVE_DASHBOARD)
         for marker in ('"AND"|"OR"', 'Preview matched resources', '/teams/preview',
                        '/resources?start_date=', 'case-sensitively', 'BLOCKED'):
+            self.assertIn(marker, LIVE_TEAMS)
+        for marker in ('Existing MTD baseline (USD)', 'baseline_amount_usd',
+                       'Declared baseline', 'FAIL CLOSED'):
             self.assertIn(marker, LIVE_TEAMS)
         self.assertNotIn('status: "Normal"', LIVE_TEAMS)
 

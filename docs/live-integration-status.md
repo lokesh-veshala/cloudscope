@@ -19,13 +19,14 @@ exact coverage and proration rules are documented in
 [Storage cost models](storage-cost-models.md). UTC month boundaries clip
 intervals when querying subtotals. No usage is reconstructed before the first
 observation. Gaps, changed tags, changed rates and unsupported dimensions
-produce unresolved records, not zero-dollar costs. Spot fallback assumes 42%
+produce unresolved records, not zero-dollar costs. Spot fallback assumes 52%
 off the matching On-Demand rate and is visibly separated from other estimates.
 
 Team limits persist in PostgreSQL and select interval ownership by exact tag
-rules. Every successful collection evaluates 80% and 100% thresholds. Partial
-observed subtotals remain visible, but only complete and fresh UTC month-to-date
-evidence can advance confirmation or publish SNS. Two distinct qualifying
+rules. Every successful collection evaluates 80% and 100% thresholds. In the
+creation month, the policy uses a declared baseline plus complete and fresh
+observations after team creation. Partial observed subtotals remain visible but
+cannot advance confirmation or publish SNS. Two distinct qualifying
 observations are required, and each team/month/version/threshold is emitted once.
 
 ## Deployment update

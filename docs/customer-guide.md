@@ -24,13 +24,20 @@ No certificate, private key, AWS profile, inventory, or account-specific output
 belongs in Git. Collection is read-only. Automatic SNS publication is limited to
 the approved topic and only occurs after complete-cost safety checks pass.
 
+When creating a team after the month has started, **Existing MTD baseline** may
+contain the team's best known cost from 00:00 UTC on the first day of the month
+until team creation. This value is user-declared, not verified by AWS. It is used
+only for that first month and appears separately from CloudScope-observed cost in
+the dashboard and alert payload. Delete and recreate the team to correct a
+baseline; this preserves the immutable alert/deduplication history.
+
 Automatic collection is opt-in for each connected account. Select a cadence of
 2, 5 or 10 minutes and choose **Enable automatic**. Use **Job history** to inspect
 queued, running, successful and failed attempts. Pausing removes queued attempts;
 an attempt already running is allowed to finish.
 
 If historical Spot coverage is unavailable, CloudScope records a provisional
-Spot estimate equal to 58% of the exact matching On-Demand rate (a 42% assumed
+Spot estimate equal to 48% of the exact matching On-Demand rate (a 52% assumed
 discount). It is labeled as an assumption and cannot be used for threshold
 alerts. It is not evidence of the Spot price charged by AWS.
 

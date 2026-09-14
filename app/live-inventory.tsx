@@ -44,7 +44,7 @@ export function LiveInventory({accounts}: {accounts: {id: string; display_name: 
       {filtered.map(row => {
         const price = row.metadata.pricing;
         const rate = price?.usd_per_hour ? `$${price.usd_per_hour}/hour` : price?.monthly_usd ? `$${Number(price.monthly_usd).toFixed(4)}/month` : "Unavailable";
-        const basis = price?.status === "ESTIMATED" ? "Assumed 42% Spot discount; not alarm eligible" : price?.source === "EBS_PROVISIONED" ? "Complete provisioned EBS dimensions" : price?.status === "PARTIAL" ? `${price.source}; ${price.limitation}` : price?.status === "COMPLETE" ? "Matched AWS list rate" : "Not priced";
+        const basis = price?.status === "ESTIMATED" ? "Assumed 52% Spot discount; not alarm eligible" : price?.source === "EBS_PROVISIONED" ? "Complete provisioned EBS dimensions" : price?.status === "PARTIAL" ? `${price.source}; ${price.limitation}` : price?.status === "COMPLETE" ? "Matched AWS list rate" : "Not priced";
         return <tr key={row.id}><td>{row.name}<br/><small>{row.provider_resource_id}</small></td><td>{row.provider_resource_type}</td><td>{row.region}</td><td>{row.state}</td><td>{row.last_seen}</td><td>{rate}</td><td>{basis}</td></tr>;
       })}
     </tbody></table></div>}

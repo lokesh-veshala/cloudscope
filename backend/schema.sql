@@ -199,6 +199,7 @@ CREATE TABLE IF NOT EXISTS pilot_team_limits (
 ALTER TABLE pilot_team_limits ADD COLUMN IF NOT EXISTS filter_expression jsonb;
 ALTER TABLE pilot_team_limits ADD COLUMN IF NOT EXISTS configuration_version integer NOT NULL DEFAULT 1;
 ALTER TABLE pilot_team_limits ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
+ALTER TABLE pilot_team_limits ADD COLUMN IF NOT EXISTS baseline_amount_usd numeric(20,6) NOT NULL DEFAULT 0 CHECK(baseline_amount_usd >= 0);
 UPDATE pilot_team_limits
 SET filter_expression = jsonb_build_object(
   'kind', 'group', 'operator', 'AND', 'conditions', jsonb_build_array(
@@ -233,6 +234,11 @@ CREATE TABLE IF NOT EXISTS pilot_threshold_events (
   estimated_cost_usd numeric(20,6) NOT NULL CHECK(estimated_cost_usd >= 0),
   limit_usd numeric(20,6) NOT NULL CHECK(limit_usd > 0),
   usage_percent numeric(20,6) NOT NULL CHECK(usage_percent >= 0),
+  baseline_amount_usd numeric(20,6) NOT NULL DEFAULT 0 CHECK(baseline_amount_usd >= 0),
+  observed_cost_usd numeric(20,6) NOT NULL DEFAULT 0 CHECK(observed_cost_usd >= 0),
+  monitoring_started_at timestamptz NOT NULL,
+  period_basis text NOT NULL DEFAULT 'CALENDAR_MONTH'
+    CHECK(period_basis IN ('CALENDAR_MONTH','DECLARED_BASELINE_PLUS_MONITORING')),
   pricing_coverage numeric(8,7) NOT NULL CHECK(pricing_coverage = 1),
   event_type text NOT NULL DEFAULT 'COST_THRESHOLD_EXCEEDED'
     CHECK(event_type = 'COST_THRESHOLD_EXCEEDED'),
@@ -248,6 +254,12 @@ CREATE TABLE IF NOT EXISTS pilot_threshold_events (
 );
 CREATE INDEX IF NOT EXISTS pilot_threshold_events_delivery_idx
   ON pilot_threshold_events(status, next_attempt_at);
+ALTER TABLE pilot_threshold_events ADD COLUMN IF NOT EXISTS baseline_amount_usd numeric(20,6) NOT NULL DEFAULT 0;
+ALTER TABLE pilot_threshold_events ADD COLUMN IF NOT EXISTS observed_cost_usd numeric(20,6) NOT NULL DEFAULT 0;
+ALTER TABLE pilot_threshold_events ADD COLUMN IF NOT EXISTS monitoring_started_at timestamptz;
+UPDATE pilot_threshold_events SET monitoring_started_at=period_start WHERE monitoring_started_at IS NULL;
+ALTER TABLE pilot_threshold_events ALTER COLUMN monitoring_started_at SET NOT NULL;
+ALTER TABLE pilot_threshold_events ADD COLUMN IF NOT EXISTS period_basis text NOT NULL DEFAULT 'CALENDAR_MONTH';
 CREATE TABLE IF NOT EXISTS notification_deliveries (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   cloud_account_id uuid NOT NULL REFERENCES cloud_accounts(id),

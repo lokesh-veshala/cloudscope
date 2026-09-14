@@ -1,12 +1,13 @@
 import unittest
 from datetime import date, datetime, timezone
+from decimal import Decimal
 
 from pydantic import ValidationError
 from fastapi import HTTPException
 
 from api import (CollectionScheduleUpdate, PilotLimitCreate, _compile_filter,
                  _five_minute_window, _reporting_window, _storage_pricing_summary,
-                 _validate_filter_expression)
+                 _team_baseline_for_window, _validate_filter_expression)
 
 
 class ApiModelTests(unittest.TestCase):
@@ -88,6 +89,32 @@ class ApiModelTests(unittest.TestCase):
         ):
             with self.assertRaises(ValidationError):
                 PilotLimitCreate(name=name, amount_usd="100", filter_expression=expression)
+
+    def test_team_model_accepts_zero_or_positive_declared_baseline(self):
+        expression = {"kind": "group", "operator": "AND", "conditions": [
+            {"kind": "tag", "key": "Team", "operator": "EQUALS", "value": "HPC"},
+        ]}
+        self.assertEqual(PilotLimitCreate(
+            name="HPC", amount_usd="100", filter_expression=expression,
+        ).baseline_amount_usd, Decimal("0"))
+        self.assertEqual(PilotLimitCreate(
+            name="HPC", amount_usd="100", baseline_amount_usd="42.123456",
+            filter_expression=expression,
+        ).baseline_amount_usd, Decimal("42.123456"))
+        with self.assertRaises(ValidationError):
+            PilotLimitCreate(name="HPC", amount_usd="100",
+                             baseline_amount_usd="-0.01",
+                             filter_expression=expression)
+
+    def test_declared_baseline_applies_only_to_creation_month_mtd_window(self):
+        team = {"created_at": datetime(2026, 9, 14, 12, tzinfo=timezone.utc),
+                "baseline_amount_usd": "75.25"}
+        self.assertEqual(_team_baseline_for_window(
+            team, datetime(2026, 9, 1, tzinfo=timezone.utc),
+            datetime(2026, 9, 20, tzinfo=timezone.utc)), Decimal("75.25"))
+        self.assertEqual(_team_baseline_for_window(
+            team, datetime(2026, 10, 1, tzinfo=timezone.utc),
+            datetime(2026, 10, 20, tzinfo=timezone.utc)), Decimal("0"))
 
 
 if __name__ == "__main__":

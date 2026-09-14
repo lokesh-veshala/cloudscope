@@ -90,7 +90,7 @@ Rollback must account for both application and schema versions. Backups require 
 
 ## Evidence available now
 
-The baseline suite has 29 passing checks. Frontend build and lint pass. The user
+The baseline suite has 84 passing checks. Frontend build and lint pass. The user
 has independently verified Roles Anywhere and required read APIs from the test
 VM, but the new API/database integration still requires VM end-to-end validation.
 No schema restore, concurrency, SNS end-to-end, or authenticated browser
